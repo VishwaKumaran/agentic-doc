@@ -21,7 +21,7 @@ pub fn emit_empty_analysis_warning() {
     );
 }
 
-/// Version du contrat JSON (cli.md §11, décision 15).
+/// Version du contrat JSON (cli.md §12, décision 15).
 ///
 /// Incrémentée **uniquement** en cas de rupture (renommage, suppression ou changement
 /// de type d'un champ existant). Un ajout de champ ne change pas la version.
@@ -514,4 +514,309 @@ pub fn format_coverage_json(coverage: &crate::domain::coverage::Coverage, all: b
     }
 
     serde_json::to_string_pretty(&json_obj).unwrap()
+}
+
+use crate::application::relations::{
+    AddRelationResult, CheckRelationsResult, ListRelationsResult, RelationResolution,
+    RemoveRelationResult,
+};
+
+pub fn format_relations_list_text(result: &ListRelationsResult) -> String {
+    if result.relations.is_empty() {
+        return "No relations declared.".to_string();
+    }
+
+    let mut out = String::from("Relations\n\n");
+    for info in &result.relations {
+        let rel = &info.relation;
+        let conf_str = match rel.confidence {
+            Confidence::High => "high",
+            Confidence::Medium => "medium",
+            Confidence::Low => "low",
+        };
+
+        out.push_str(&format!("  {} → {}", rel.source.0, rel.target.0));
+
+        let res_suffix = match info.resolution {
+            RelationResolution::Ok => format!("  ({})", conf_str),
+            RelationResolution::SourceNotFound => "  [source not found]".to_string(),
+            RelationResolution::TargetNotFound => "  [target not found]".to_string(),
+            RelationResolution::SourceAndTargetNotFound => {
+                "  [source not found, target not found]".to_string()
+            }
+        };
+
+        out.push_str(&res_suffix);
+
+        if rel.origin != crate::domain::relation::RelationOrigin::Explicit
+            || rel.status != crate::domain::relation::RelationStatus::Validated
+        {
+            let origin_str = match rel.origin {
+                crate::domain::relation::RelationOrigin::Explicit => "explicit",
+                crate::domain::relation::RelationOrigin::Discovered => "discovered",
+                crate::domain::relation::RelationOrigin::Imported => "imported",
+            };
+            let status_str = match rel.status {
+                crate::domain::relation::RelationStatus::Candidate => "candidate",
+                crate::domain::relation::RelationStatus::Validated => "validated",
+                crate::domain::relation::RelationStatus::Rejected => "rejected",
+            };
+            out.push_str(&format!("  [{}/{}]", origin_str, status_str));
+        }
+        out.push('\n');
+    }
+
+    out.trim_end().to_string()
+}
+
+pub fn format_relations_list_json(result: &ListRelationsResult) -> String {
+    let json_relations: Vec<_> = result
+        .relations
+        .iter()
+        .map(|info| {
+            let rel = &info.relation;
+            let conf_str = match rel.confidence {
+                Confidence::High => "high",
+                Confidence::Medium => "medium",
+                Confidence::Low => "low",
+            };
+            let origin_str = match rel.origin {
+                crate::domain::relation::RelationOrigin::Explicit => "explicit",
+                crate::domain::relation::RelationOrigin::Discovered => "discovered",
+                crate::domain::relation::RelationOrigin::Imported => "imported",
+            };
+            let status_str = match rel.status {
+                crate::domain::relation::RelationStatus::Candidate => "candidate",
+                crate::domain::relation::RelationStatus::Validated => "validated",
+                crate::domain::relation::RelationStatus::Rejected => "rejected",
+            };
+            let res_str = match info.resolution {
+                RelationResolution::Ok => "ok",
+                RelationResolution::SourceNotFound => "source_not_found",
+                RelationResolution::TargetNotFound => "target_not_found",
+                RelationResolution::SourceAndTargetNotFound => "source_and_target_not_found",
+            };
+
+            json!({
+                "source": rel.source.0,
+                "target": rel.target.0,
+                "origin": origin_str,
+                "status": status_str,
+                "confidence": conf_str,
+                "resolution": res_str
+            })
+        })
+        .collect();
+
+    let json_val = json!({
+        "command": "relations",
+        "schema_version": SCHEMA_VERSION,
+        "count": result.relations.len(),
+        "relations": json_relations
+    });
+
+    serde_json::to_string_pretty(&json_val).unwrap()
+}
+
+pub fn format_relations_check_text(result: &CheckRelationsResult) -> String {
+    let mut out = String::from("Relations check\n\n");
+    let summary = &result.summary;
+    let total_relations = result.relations.len();
+
+    out.push_str(&format!("  {} relations\n", total_relations));
+    out.push_str(&format!(
+        "  {} source not found\n",
+        summary.sources_not_found
+    ));
+    out.push_str(&format!(
+        "  {} target not found\n",
+        summary.targets_not_found
+    ));
+    out.push_str(&format!("  {} duplicates\n\n", summary.duplicates));
+
+    let mut sources_not_found = Vec::new();
+    let mut targets_not_found = Vec::new();
+
+    for info in &result.relations {
+        let rel = &info.relation;
+        match info.resolution {
+            RelationResolution::SourceNotFound => {
+                sources_not_found.push(format!("  {} → {}", rel.source.0, rel.target.0));
+            }
+            RelationResolution::TargetNotFound => {
+                targets_not_found.push(format!("  {} → {}", rel.source.0, rel.target.0));
+            }
+            RelationResolution::SourceAndTargetNotFound => {
+                sources_not_found.push(format!("  {} → {}", rel.source.0, rel.target.0));
+                targets_not_found.push(format!("  {} → {}", rel.source.0, rel.target.0));
+            }
+            RelationResolution::Ok => {}
+        }
+    }
+
+    if !sources_not_found.is_empty() {
+        out.push_str("Sources not found:\n");
+        for line in sources_not_found {
+            out.push_str(&format!("{}\n", line));
+        }
+        out.push('\n');
+    }
+
+    if !targets_not_found.is_empty() {
+        out.push_str("Targets not found:\n");
+        for line in targets_not_found {
+            out.push_str(&format!("{}\n", line));
+        }
+        out.push('\n');
+    }
+
+    out.trim_end().to_string()
+}
+
+pub fn format_relations_check_json(result: &CheckRelationsResult) -> String {
+    let json_relations: Vec<_> = result
+        .relations
+        .iter()
+        .map(|info| {
+            let rel = &info.relation;
+            let conf_str = match rel.confidence {
+                Confidence::High => "high",
+                Confidence::Medium => "medium",
+                Confidence::Low => "low",
+            };
+            let origin_str = match rel.origin {
+                crate::domain::relation::RelationOrigin::Explicit => "explicit",
+                crate::domain::relation::RelationOrigin::Discovered => "discovered",
+                crate::domain::relation::RelationOrigin::Imported => "imported",
+            };
+            let status_str = match rel.status {
+                crate::domain::relation::RelationStatus::Candidate => "candidate",
+                crate::domain::relation::RelationStatus::Validated => "validated",
+                crate::domain::relation::RelationStatus::Rejected => "rejected",
+            };
+            let res_str = match info.resolution {
+                RelationResolution::Ok => "ok",
+                RelationResolution::SourceNotFound => "source_not_found",
+                RelationResolution::TargetNotFound => "target_not_found",
+                RelationResolution::SourceAndTargetNotFound => "source_and_target_not_found",
+            };
+
+            json!({
+                "source": rel.source.0,
+                "target": rel.target.0,
+                "origin": origin_str,
+                "status": status_str,
+                "confidence": conf_str,
+                "resolution": res_str
+            })
+        })
+        .collect();
+
+    let json_val = json!({
+        "command": "relations",
+        "schema_version": SCHEMA_VERSION,
+        "count": result.relations.len(),
+        "relations": json_relations,
+        "summary": {
+            "ok": result.summary.ok,
+            "sources_not_found": result.summary.sources_not_found,
+            "targets_not_found": result.summary.targets_not_found,
+            "duplicates": result.summary.duplicates
+        }
+    });
+
+    serde_json::to_string_pretty(&json_val).unwrap()
+}
+
+pub fn format_relations_add_text(result: &AddRelationResult) -> String {
+    let rel = &result.relation;
+    let mut out = match result.result {
+        crate::domain::relation::InsertOutcome::Added => {
+            format!("Relation added: {} → {}", rel.source.0, rel.target.0)
+        }
+        crate::domain::relation::InsertOutcome::Updated => {
+            let conf_str = match rel.confidence {
+                Confidence::High => "high",
+                Confidence::Medium => "medium",
+                Confidence::Low => "low",
+            };
+            format!(
+                "Relation updated: {} → {} (confidence {})",
+                rel.source.0, rel.target.0, conf_str
+            )
+        }
+        crate::domain::relation::InsertOutcome::Unchanged => {
+            format!(
+                "Relation already declared: {} → {}",
+                rel.source.0, rel.target.0
+            )
+        }
+    };
+
+    if result.dry_run {
+        out.push_str("\n\nDry run: nothing written.");
+    }
+
+    out
+}
+
+pub fn format_relations_add_json(result: &AddRelationResult) -> String {
+    let rel = &result.relation;
+    let conf_str = match rel.confidence {
+        Confidence::High => "high",
+        Confidence::Medium => "medium",
+        Confidence::Low => "low",
+    };
+
+    let res_str = match result.result {
+        crate::domain::relation::InsertOutcome::Added => "added",
+        crate::domain::relation::InsertOutcome::Updated => "updated",
+        crate::domain::relation::InsertOutcome::Unchanged => "unchanged",
+    };
+
+    let json_val = json!({
+        "command": "relations",
+        "schema_version": SCHEMA_VERSION,
+        "dry_run": result.dry_run,
+        "result": res_str,
+        "relation": {
+            "source": rel.source.0,
+            "target": rel.target.0,
+            "confidence": conf_str
+        }
+    });
+
+    serde_json::to_string_pretty(&json_val).unwrap()
+}
+
+pub fn format_relations_remove_text(result: &RemoveRelationResult) -> String {
+    let mut out = if result.removed {
+        format!(
+            "Relation removed: {} → {}",
+            result.source.0, result.target.0
+        )
+    } else {
+        "Nothing to remove.".to_string()
+    };
+
+    if result.dry_run {
+        out.push_str("\n\nDry run: nothing written.");
+    }
+
+    out
+}
+
+pub fn format_relations_remove_json(result: &RemoveRelationResult) -> String {
+    let json_val = json!({
+        "command": "relations",
+        "schema_version": SCHEMA_VERSION,
+        "dry_run": result.dry_run,
+        "removed": result.removed,
+        "relation": {
+            "source": result.source.0,
+            "target": result.target.0
+        }
+    });
+
+    serde_json::to_string_pretty(&json_val).unwrap()
 }

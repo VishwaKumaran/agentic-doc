@@ -27,6 +27,7 @@ fn main() {
             coverage,
             all,
         } => cli::docs::execute(path, coverage, all, cli.json),
+        Commands::Relations { command } => cli::relations::execute(command, cli.json),
     };
 
     if let Err((msg, exit_code)) = result {

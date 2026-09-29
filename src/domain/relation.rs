@@ -60,6 +60,14 @@ impl DocumentationRelation {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InsertOutcome {
+    Added,
+    Updated,
+    Unchanged,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RelationSet {
     pub relations: Vec<DocumentationRelation>,
@@ -86,6 +94,66 @@ impl RelationSet {
         self.relations
             .iter()
             .filter(|r| r.target == *target)
+            .collect()
+    }
+
+    /// Insère ou met à jour une relation dans l'ensemble.
+    ///
+    /// - Si la paire `(source, target)` est absente : ajout de la relation (résultat `Added`).
+    /// - Si la paire existe avec exactement la même confiance : inchangé (résultat `Unchanged`).
+    /// - Si la paire existe avec une confiance différente : mise à jour de la confiance (résultat `Updated`).
+    ///
+    /// L'ensemble reste trié par `(source, target)`.
+    pub fn insert(&mut self, relation: DocumentationRelation) -> InsertOutcome {
+        if let Some(existing) = self
+            .relations
+            .iter_mut()
+            .find(|r| r.source == relation.source && r.target == relation.target)
+        {
+            if existing.confidence == relation.confidence {
+                InsertOutcome::Unchanged
+            } else {
+                existing.confidence = relation.confidence;
+                InsertOutcome::Updated
+            }
+        } else {
+            self.relations.push(relation);
+            self.relations.sort_by(|a, b| {
+                a.source
+                    .cmp(&b.source)
+                    .then_with(|| a.target.cmp(&b.target))
+            });
+            InsertOutcome::Added
+        }
+    }
+
+    /// Supprime **toutes** les occurrences de la paire `(source, target)`.
+    ///
+    /// Retourne le nombre de relations supprimées.
+    /// L'ensemble reste trié par `(source, target)`.
+    pub fn remove(&mut self, source: &ElementId, target: &DocumentId) -> usize {
+        let initial_len = self.relations.len();
+        self.relations
+            .retain(|r| !(r.source == *source && r.target == *target));
+        initial_len - self.relations.len()
+    }
+
+    /// Retourne les paires `(source, target)` présentes plusieurs fois dans l'ensemble, avec leur nombre d'occurrences.
+    ///
+    /// Trié par `(source, target)`.
+    pub fn duplicates(&self) -> Vec<(ElementId, DocumentId, usize)> {
+        let mut counts: std::collections::BTreeMap<(ElementId, DocumentId), usize> =
+            std::collections::BTreeMap::new();
+        for r in &self.relations {
+            *counts
+                .entry((r.source.clone(), r.target.clone()))
+                .or_default() += 1;
+        }
+
+        counts
+            .into_iter()
+            .filter(|(_, count)| *count > 1)
+            .map(|((source, target), count)| (source, target, count))
             .collect()
     }
 
@@ -203,5 +271,125 @@ mod tests {
                 "relation target not found: removed-doc.md".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn test_insert_absent_pair_returns_added() {
+        let mut set = RelationSet::default();
+        let rel = DocumentationRelation::explicit(
+            ElementId::for_symbol("src/auth.py", "login"),
+            DocumentId("auth.md".to_string()),
+        );
+
+        let outcome = set.insert(rel.clone());
+        assert_eq!(outcome, InsertOutcome::Added);
+        assert_eq!(set.relations.len(), 1);
+        assert_eq!(set.relations[0], rel);
+    }
+
+    #[test]
+    fn test_insert_identical_pair_returns_unchanged() {
+        let rel = DocumentationRelation::explicit(
+            ElementId::for_symbol("src/auth.py", "login"),
+            DocumentId("auth.md".to_string()),
+        );
+        let mut set = RelationSet::new(vec![rel.clone()]);
+
+        let outcome = set.insert(rel);
+        assert_eq!(outcome, InsertOutcome::Unchanged);
+        assert_eq!(set.relations.len(), 1);
+    }
+
+    #[test]
+    fn test_insert_different_confidence_returns_updated() {
+        let rel1 = DocumentationRelation::explicit(
+            ElementId::for_symbol("src/auth.py", "login"),
+            DocumentId("auth.md".to_string()),
+        );
+        let mut set = RelationSet::new(vec![rel1.clone()]);
+
+        let mut rel2 = rel1.clone();
+        rel2.confidence = Confidence::Medium;
+
+        let outcome = set.insert(rel2);
+        assert_eq!(outcome, InsertOutcome::Updated);
+        assert_eq!(set.relations.len(), 1);
+        assert_eq!(set.relations[0].confidence, Confidence::Medium);
+    }
+
+    #[test]
+    fn test_remove_absent_pair_returns_zero() {
+        let rel = DocumentationRelation::explicit(
+            ElementId::for_symbol("src/auth.py", "login"),
+            DocumentId("auth.md".to_string()),
+        );
+        let mut set = RelationSet::new(vec![rel]);
+
+        let removed = set.remove(
+            &ElementId::for_symbol("src/auth.py", "logout"),
+            &DocumentId("auth.md".to_string()),
+        );
+        assert_eq!(removed, 0);
+        assert_eq!(set.relations.len(), 1);
+    }
+
+    #[test]
+    fn test_remove_duplicate_pair_removes_all_occurrences() {
+        let rel1 = DocumentationRelation::explicit(
+            ElementId::for_symbol("src/auth.py", "login"),
+            DocumentId("auth.md".to_string()),
+        );
+        let rel2 = rel1.clone();
+        let mut set = RelationSet {
+            relations: vec![rel1, rel2],
+        };
+
+        let removed = set.remove(
+            &ElementId::for_symbol("src/auth.py", "login"),
+            &DocumentId("auth.md".to_string()),
+        );
+        assert_eq!(removed, 2);
+        assert!(set.relations.is_empty());
+    }
+
+    #[test]
+    fn test_duplicates_detects_duplicate_pairs() {
+        let rel1 = DocumentationRelation::explicit(
+            ElementId::for_symbol("src/auth.py", "login"),
+            DocumentId("auth.md".to_string()),
+        );
+        let rel2 = rel1.clone();
+        let rel3 = DocumentationRelation::explicit(
+            ElementId::for_symbol("src/users.py", "User"),
+            DocumentId("users.md".to_string()),
+        );
+        let set = RelationSet {
+            relations: vec![rel1, rel2, rel3],
+        };
+
+        let dups = set.duplicates();
+        assert_eq!(dups.len(), 1);
+        assert_eq!(dups[0].0, ElementId::for_symbol("src/auth.py", "login"));
+        assert_eq!(dups[0].1, DocumentId("auth.md".to_string()));
+        assert_eq!(dups[0].2, 2);
+    }
+
+    #[test]
+    fn test_set_remains_sorted_after_insert() {
+        let mut set = RelationSet::default();
+        let r1 = DocumentationRelation::explicit(
+            ElementId::for_symbol("src/users.py", "User"),
+            DocumentId("users.md".to_string()),
+        );
+        let r2 = DocumentationRelation::explicit(
+            ElementId::for_symbol("src/auth.py", "login"),
+            DocumentId("auth.md".to_string()),
+        );
+
+        set.insert(r1);
+        set.insert(r2);
+
+        assert_eq!(set.relations[0].source.0, "src/auth.py::login");
+        assert_eq!(set.relations[1].source.0, "src/users.py::User");
     }
 }

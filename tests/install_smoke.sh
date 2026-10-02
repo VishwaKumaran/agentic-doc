@@ -42,4 +42,29 @@ fi
 # 4. --help works and lists --prefix.
 sh "$root/install.sh" --help | grep -q -- '--prefix' || fail "--help does not document --prefix"
 
+# 5. The curl form: pipe the script from a directory that holds no checkout.
+#    AGENTIC_DOC_TARBALL keeps the test offline, standing in for GitHub.
+tarball="$tmp/source.tar.gz"
+tar -czf "$tarball" -C "$(dirname -- "$root")" --exclude=target --exclude=.git "$(basename -- "$root")" ||
+	fail "could not build the source tarball for the piped test"
+
+elsewhere="$tmp/elsewhere"
+# Deliberately NOT created: the installer must create it via its closest
+# writable ancestor instead of refusing.
+piped="$tmp/nested/piped-prefix"
+mkdir -p "$elsewhere"
+
+if ! (cd "$elsewhere" && cat "$root/install.sh" | AGENTIC_DOC_TARBALL="$tarball" sh -s -- --prefix "$piped") >"$tmp/piped.log" 2>&1; then
+	cat "$tmp/piped.log" >&2
+	fail "the piped (curl-style) install failed"
+fi
+
+[ -x "$piped/bin/agentic-doc" ] || fail "the piped install did not produce the binary"
+"$piped/bin/agentic-doc" --version >/dev/null || fail "the piped install binary does not run"
+
+# 6. AGENTIC_DOC_FETCH=0 refuses to download an unrequested source.
+if (cd "$elsewhere" && cat "$root/install.sh" | AGENTIC_DOC_FETCH=0 sh -s -- --prefix "$piped") >/dev/null 2>&1; then
+	fail "AGENTIC_DOC_FETCH=0 should have refused to fetch a source"
+fi
+
 printf 'OK: install smoke test passed\n'

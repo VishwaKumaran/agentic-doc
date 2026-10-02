@@ -47,6 +47,29 @@ cd agentic-doc
 | `--prefix DIR` / `-Prefix DIR` | installation prefix — default `/usr/local` on Unix (binary in `/usr/local/bin`), `%ProgramFiles%\agentic-doc` on Windows |
 | `AGENTIC_DOC_PREFIX` | same as `--prefix`; the command line wins |
 
+**One-line install (macOS, Linux):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/VishwaKumaran/agentic-doc/main/install.sh | sudo sh
+```
+
+No clone: the script downloads the source and builds it. Without `sudo` it stops
+and prints the exact command to re-run. Arguments go after `--`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/VishwaKumaran/agentic-doc/main/install.sh | sudo sh -s -- --prefix /opt
+```
+
+It is the same `install.sh` either way: run it from a checkout and it builds
+that checkout, pipe it and it fetches the source. Read it before piping:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/VishwaKumaran/agentic-doc/main/install.sh | less
+```
+
+`AGENTIC_DOC_REF` selects a tag or branch other than `main`, and
+`AGENTIC_DOC_REPO` a fork or mirror.
+
 Re-running the installer **updates** the binary in place — there is no separate
 uninstall step. On Unix, `--prefix` also makes the installer testable without
 root, e.g. `./install.sh --prefix "$(mktemp -d)"`; that is what

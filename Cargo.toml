@@ -2,6 +2,11 @@
 name = "agentic-doc"
 version = "0.1.0"
 edition = "2021"
+description = "Keep your project and its documentation in sync — analyse changes, measure coverage, declare relations."
+license = "MIT"
+repository = "https://github.com/VishwaKumaran/agentic-doc"
+readme = "README.md"
+keywords = ["documentation", "cli", "coverage", "relations", "python"]
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }

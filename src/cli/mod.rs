@@ -5,6 +5,7 @@ pub mod output;
 pub mod relations;
 pub mod scan;
 pub mod setup;
+pub mod skills;
 pub mod status;
 
 use clap::{Parser, Subcommand, ValueEnum};
@@ -62,6 +63,11 @@ pub enum Commands {
     Relations {
         #[command(subcommand)]
         command: RelationsCommands,
+    },
+    /// Installe le skill d'agent agentic-doc-docs via `npx skills add`
+    Skills {
+        #[command(subcommand)]
+        command: SkillsCommands,
     },
 }
 
@@ -132,4 +138,15 @@ impl From<ConfidenceArg> for crate::domain::relation::Confidence {
             ConfidenceArg::Low => crate::domain::relation::Confidence::Low,
         }
     }
+}
+
+#[derive(Subcommand)]
+pub enum SkillsCommands {
+    /// Installe le skill agentic-doc-docs via `npx skills add` (alias : `add`)
+    #[command(alias = "add")]
+    Install {
+        /// Arguments transmis tels quels à `npx skills add`
+        #[arg(value_name = "ARGS", trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
 }

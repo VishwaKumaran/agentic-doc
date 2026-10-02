@@ -28,6 +28,13 @@ fn main() {
             all,
         } => cli::docs::execute(path, coverage, all, cli.json),
         Commands::Relations { command } => cli::relations::execute(command, cli.json),
+        Commands::Skills { command } => match cli::skills::execute(command, cli.json) {
+            // `skills` est un alias de `npx skills` : le code de sortie de l'enfant
+            // est propagé tel quel, sans message supplémentaire.
+            Ok(0) => Ok(()),
+            Ok(code) => process::exit(code),
+            Err(err) => Err(err),
+        },
     };
 
     if let Err((msg, exit_code)) = result {

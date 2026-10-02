@@ -1,0 +1,6 @@
+interface:
+  display_name: "Agentic Doc Docs"
+  short_description: "Complete and update the project documentation"
+
+policy:
+  allow_implicit_invocation: false

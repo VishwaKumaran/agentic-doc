@@ -14,29 +14,41 @@ which documentation pages are potentially outdated.
 
 ## Installation
 
-**Per-user (Rust, any OS):**
+**Per-user install — one line (macOS, Linux):**
 
 ```bash
-cargo install --git https://github.com/VishwaKumaran/agentic-doc
+curl -fsSL https://raw.githubusercontent.com/VishwaKumaran/agentic-doc/main/install.sh | sh
 ```
 
-This puts `agentic-doc` in `~/.cargo/bin`, which is on **your** PATH only.
-
-**System-wide (macOS, Linux, Windows) — every user on the machine:**
-
-Builds from a checkout of this repository (nothing is downloaded, no release is
-required) and installs the binary into a shared location that every user finds
-on their PATH. Requires a Rust toolchain ([rustup.rs](https://rustup.rs)).
+No clone and **no privileges**: the script downloads the source, builds it, and
+installs the binary in `~/.local/bin`, then adds that directory to your PATH
+(prepended, so it wins over any other copy) by appending one line to
+`~/.zshrc` (or `~/.bashrc`) — open a new terminal to pick it up. Arguments go
+after `--`:
 
 ```bash
-# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/VishwaKumaran/agentic-doc/main/install.sh | sh -s -- --prefix /opt
+```
+
+Read it before piping:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/VishwaKumaran/agentic-doc/main/install.sh | less
+```
+
+**Per-user install — from a checkout:**
+
+The same script, run from the repository, builds that checkout instead of
+downloading one:
+
+```bash
 git clone https://github.com/VishwaKumaran/agentic-doc
 cd agentic-doc
-sudo ./install.sh
+./install.sh
 ```
 
 ```powershell
-# Windows — from an elevated PowerShell
+# Windows (no administrator rights needed)
 git clone https://github.com/VishwaKumaran/agentic-doc
 cd agentic-doc
 .\install.ps1
@@ -44,40 +56,35 @@ cd agentic-doc
 
 | Option | Effect |
 |---|---|
-| `--prefix DIR` / `-Prefix DIR` | installation prefix — default `/usr/local` on Unix (binary in `/usr/local/bin`), `%ProgramFiles%\agentic-doc` on Windows |
+| `--prefix DIR` / `-Prefix DIR` | installation prefix — default `~/.local` on Unix (binary in `~/.local/bin`), `%LOCALAPPDATA%\Programs\agentic-doc` on Windows |
 | `AGENTIC_DOC_PREFIX` | same as `--prefix`; the command line wins |
+| `AGENTIC_DOC_NO_PATH=1` | install without touching the shell profile |
+| `AGENTIC_DOC_REF` / `AGENTIC_DOC_REPO` | download a tag, branch, fork or mirror other than `main` |
 
-**One-line install (macOS, Linux):**
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/VishwaKumaran/agentic-doc/main/install.sh | sudo sh
-```
-
-No clone: the script downloads the source and builds it. Without `sudo` it stops
-and prints the exact command to re-run. Arguments go after `--`:
+Running the installer under `sudo` is refused: the destination is inside your
+home, so root would install the binary into root's account. If an earlier
+system-wide copy exists from a previous method, remove it so it cannot shadow
+the new one:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/VishwaKumaran/agentic-doc/main/install.sh | sudo sh -s -- --prefix /opt
+sudo rm -f /usr/local/bin/agentic-doc
 ```
-
-It is the same `install.sh` either way: run it from a checkout and it builds
-that checkout, pipe it and it fetches the source. Read it before piping:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/VishwaKumaran/agentic-doc/main/install.sh | less
-```
-
-`AGENTIC_DOC_REF` selects a tag or branch other than `main`, and
-`AGENTIC_DOC_REPO` a fork or mirror.
 
 Re-running the installer **updates** the binary in place — there is no separate
-uninstall step. On Unix, `--prefix` also makes the installer testable without
-root, e.g. `./install.sh --prefix "$(mktemp -d)"`; that is what
-`tests/install_smoke.sh` does:
+uninstall step. The whole installer is covered by a smoke test that uses no
+privileges and no network:
 
 ```bash
 sh tests/install_smoke.sh
 ```
+
+**Alternative (Rust, any OS):**
+
+```bash
+cargo install --git https://github.com/VishwaKumaran/agentic-doc
+```
+
+This puts `agentic-doc` in `~/.cargo/bin` and leaves your shell profile alone.
 
 **Install the agent skill (available now):**
 

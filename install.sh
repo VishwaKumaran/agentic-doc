@@ -1,18 +1,18 @@
 #!/bin/sh
 #
-# Install the agentic-doc binary system-wide, so that every user on this
-# machine finds it on their PATH.
+# Install the agentic-doc binary for the current user, on their PATH.
 #
 # The binary is built from the checkout this script lives in: nothing is
 # downloaded and no release is required.
 #
 # Usage: ./install.sh [--prefix DIR]
-# Env:   AGENTIC_DOC_PREFIX   same as --prefix (the command line wins)
+#        curl -fsSL https://raw.githubusercontent.com/VishwaKumaran/agentic-doc/main/install.sh | sh -s -- [--prefix DIR]
+# Env:   AGENTIC_DOC_PREFIX    same as --prefix (the command line wins)
+#        AGENTIC_DOC_NO_PATH=1 refuse to touch the shell profile
 
 set -eu
 
 PROG=agentic-doc
-DEFAULT_PREFIX=/usr/local
 DEFAULT_REPO=VishwaKumaran/agentic-doc
 DEFAULT_REF=main
 
@@ -31,27 +31,26 @@ usage() {
 Usage: ./install.sh [--prefix DIR]
        curl -fsSL https://raw.githubusercontent.com/$DEFAULT_REPO/$DEFAULT_REF/install.sh | sh -s -- [--prefix DIR]
 
-Builds $PROG and installs <DIR>/bin/$PROG (default: $DEFAULT_PREFIX/bin/$PROG)
-for every user on this machine.
+Builds $PROG and installs <DIR>/bin/$PROG for the current user.
 
 Run from a checkout, the script builds that checkout. Piped to a shell (the
 curl form above) there is no checkout: the source is downloaded first, so no
 clone is needed.
 
 Options:
-  --prefix DIR   installation prefix (default: $DEFAULT_PREFIX)
+  --prefix DIR   installation prefix (default: \$HOME/.local)
   -h, --help     show this help
 
 Environment:
-  AGENTIC_DOC_PREFIX    same as --prefix; the command line wins
-  AGENTIC_DOC_REPO      source repository (default: $DEFAULT_REPO)
-  AGENTIC_DOC_REF       git ref to download (default: $DEFAULT_REF)
-  AGENTIC_DOC_TARBALL   source tarball to use (path or URL) instead of GitHub
-  AGENTIC_DOC_FETCH=0   never download; a local checkout is then required
+  AGENTIC_DOC_PREFIX     same as --prefix; the command line wins
+  AGENTIC_DOC_REPO       source repository (default: $DEFAULT_REPO)
+  AGENTIC_DOC_REF        git ref to download (default: $DEFAULT_REF)
+  AGENTIC_DOC_TARBALL    source tarball to use (path or URL) instead of GitHub
+  AGENTIC_DOC_FETCH=0    never download; a local checkout is then required
+  AGENTIC_DOC_NO_PATH=1  do not add the installation directory to the PATH
 
-Requires a Rust toolchain (https://rustup.rs), plus curl (or wget) and tar when
-there is no checkout. Root privileges are required when <DIR>/bin cannot be
-written by the current user.
+No privileges are required. Requires a Rust toolchain (https://rustup.rs),
+plus curl (or wget) and tar when there is no checkout.
 EOF
 }
 
@@ -100,10 +99,13 @@ fetch_source() {
 	[ -n "$manifest" ] || return 1
 	fetched_dir=$(dirname -- "$manifest")
 }
-
 # --- arguments ---------------------------------------------------------------
 
-prefix=${AGENTIC_DOC_PREFIX:-$DEFAULT_PREFIX}
+[ -n "${HOME:-}" ] || die "HOME is not set; pass --prefix explicitly."
+
+# ~/.local is the XDG user directory whose bin/ subdirectory holds per-user
+# executables, so no privileges are ever needed.
+prefix=${AGENTIC_DOC_PREFIX:-$HOME/.local}
 
 while [ $# -gt 0 ]; do
 	case $1 in
@@ -134,52 +136,13 @@ case $prefix in
 *) prefix=$PWD/$prefix ;;
 esac
 
-# --- privileges --------------------------------------------------------------
+# --- a single user's install -------------------------------------------------
 
-bindir=$prefix/bin
-binary=$bindir/$PROG
-
-am_root=no
+# The destination belongs to one account, so root is never needed and running
+# as root would install into root's home instead of the user's.
 if [ "$(id -u)" -eq 0 ]; then
-	am_root=yes
-fi
-
-# Building as the invoking user keeps target/ and the cargo home theirs and
-# reuses their dependency cache; sudo tells us who invoked it.
-invoker=${SUDO_USER:-}
-work_as_user=no
-if [ "$am_root" = yes ] && [ -n "$invoker" ] && [ "$invoker" != root ]; then
-	work_as_user=yes
-fi
-
-# Walk up to the nearest directory that exists: creating the missing ones
-# succeeds exactly when their closest existing ancestor is writable.
-probe=$bindir
-while [ ! -d "$probe" ]; do
-	parent=$(dirname -- "$probe")
-	if [ "$parent" = "$probe" ]; then
-		break
-	fi
-	probe=$parent
-done
-
-writable=no
-if [ "$am_root" = yes ] || [ -w "$probe" ]; then
-	writable=yes
-fi
-
-if [ "$writable" = no ]; then
-	if [ -f "$0" ]; then
-		case $0 in
-		*/*) rerun="sudo $0 --prefix $prefix" ;;
-		*) rerun="sudo ./$0 --prefix $prefix" ;;
-		esac
-	else
-		rerun="curl -fsSL https://raw.githubusercontent.com/$repo/$ref/install.sh | sudo sh -s -- --prefix $prefix"
-	fi
-	die "cannot write to $bindir (root privileges are required).
-Re-run with:
-  $rerun"
+	die "this installs $PROG for a single user; do not run it as root (it would install into root's home).
+Re-run without sudo."
 fi
 
 # --- locate the checkout -----------------------------------------------------
@@ -203,11 +166,6 @@ if [ -z "$checkout" ]; then
 		die "could not obtain the agentic-doc source: curl (or wget), tar and network are required outside a checkout."
 	fi
 	checkout=$fetched_dir
-	# The tree was downloaded by root into a root-only directory; hand it to
-	# the invoking user so the build below can run as them.
-	if [ "$work_as_user" = yes ]; then
-		chown -R "$invoker" "$cleanup_dir" 2>/dev/null || true
-	fi
 	printf 'Downloaded source: %s\n' "$checkout"
 fi
 
@@ -215,46 +173,21 @@ cd "$checkout"
 
 # --- locate cargo ------------------------------------------------------------
 
-# sudo resets PATH (secure_path), which usually hides the user's cargo
-# (typically ~/.cargo/bin); fall back to the invoking user's toolchain.
-find_cargo() {
-	if command -v cargo >/dev/null 2>&1; then
-		command -v cargo
-		return 0
-	fi
-	if [ -n "$invoker" ] && [ "$invoker" != root ]; then
-		home=$(eval printf '%s' "~$invoker")
-		if [ -x "$home/.cargo/bin/cargo" ]; then
-			printf '%s\n' "$home/.cargo/bin/cargo"
-			return 0
-		fi
-	fi
-	return 1
-}
-
-cargo_bin=$(find_cargo) || die "cargo not found. Install a Rust toolchain (https://rustup.rs) and re-run."
+cargo_bin=$(command -v cargo) || die "cargo not found. Install a Rust toolchain (https://rustup.rs) and re-run."
 
 # --- build -------------------------------------------------------------------
 
 printf 'Building %s (release)...\n' "$PROG"
-
-if [ "$work_as_user" = yes ]; then
-	# Build as the invoking user so target/ and the cargo home stay theirs.
-	if sudo -u "$invoker" -H "$cargo_bin" build --release; then
-		:
-	else
-		printf 'Warning: could not build as %s; building as root.\n' "$invoker" >&2
-		"$cargo_bin" build --release
-	fi
-else
-	"$cargo_bin" build --release
-fi
+"$cargo_bin" build --release
 
 target_dir=${CARGO_TARGET_DIR:-target}
 built=$target_dir/release/$PROG
 [ -x "$built" ] || die "the build did not produce $built."
 
 # --- install -----------------------------------------------------------------
+
+bindir=$prefix/bin
+binary=$bindir/$PROG
 
 mkdir -p "$bindir"
 
@@ -282,9 +215,62 @@ fi
 
 printf 'Version:   %s (before: %s)\n' "$after" "$before"
 
+# --- PATH --------------------------------------------------------------------
+
+# Prepending puts this copy ahead of any other one, such as a system-wide
+# /usr/local/bin/agentic-doc left over from an earlier install.
+profile_file() {
+	case $(basename -- "${SHELL:-/bin/sh}") in
+	zsh) printf '%s\n' "$HOME/.zshrc" ;;
+	bash) printf '%s\n' "$HOME/.bashrc" ;;
+	*) printf '%s\n' "$HOME/.profile" ;;
+	esac
+}
+
+add_to_path() {
+	rc=$1
+
+	# $HOME inside the prefix keeps the line valid if the home moves later.
+	entry=$bindir
+	case $bindir in
+	"$HOME"/*) entry="\$HOME/${bindir#"$HOME"/}" ;;
+	esac
+
+	marker='# added by agentic-doc install.sh'
+
+	if [ -f "$rc" ]; then
+		for needle in "$bindir" "$entry" "$marker"; do
+			if grep -Fq "$needle" "$rc"; then
+				printf 'PATH already set in %s\n' "$rc"
+				return 0
+			fi
+		done
+	fi
+
+	if printf '\n%s\nexport PATH="%s:$PATH"\n' "$marker" "$entry" >>"$rc" 2>/dev/null; then
+		printf 'Added to PATH in %s:\n  export PATH="%s:$PATH"\n' "$rc" "$entry"
+		printf 'Open a new terminal (or run that line) to use %s as a command.\n' "$PROG"
+	else
+		printf 'Warning: could not update %s; add this line yourself:\n  export PATH="%s:$PATH"\n' "$rc" "$entry" >&2
+	fi
+}
+
+case ":$PATH:" in
+*":$bindir:"*)
+	printf '%s is already in PATH\n' "$bindir"
+	;;
+*)
+	if [ "${AGENTIC_DOC_NO_PATH:-0}" = 1 ]; then
+		printf 'Warning: %s is not in PATH; add this line yourself:\n  export PATH="%s:$PATH"\n' "$bindir" "$bindir" >&2
+	else
+		add_to_path "$(profile_file)"
+	fi
+	;;
+esac
+
 # --- shadowing check ---------------------------------------------------------
 
-# A copy earlier in PATH (e.g. ~/.cargo/bin on Linux) would hide this install.
+# Anything earlier in PATH than this install would hide it.
 for dir in $(printf '%s' "$PATH" | tr ':' ' '); do
 	[ -n "$dir" ] || continue
 	if [ "$dir" = "$bindir" ]; then
@@ -295,8 +281,3 @@ for dir in $(printf '%s' "$PATH" | tr ':' ' '); do
 		break
 	fi
 done
-
-case ":$PATH:" in
-*":$bindir:"*) ;;
-*) printf 'Warning: %s is not in PATH; add it to run %s as a command.\n' "$bindir" "$PROG" >&2 ;;
-esac

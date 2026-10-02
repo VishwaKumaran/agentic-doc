@@ -1,14 +1,16 @@
-# Install the agentic-doc binary system-wide, so that every user on this
-# machine finds it on their PATH.
+# Install the agentic-doc binary for the current user, on their PATH.
 #
 # The binary is built from the checkout this script lives in: nothing is
 # downloaded and no release is required.
 #
 # Usage:  .\install.ps1 [-Prefix DIR]
-# Env:    AGENTIC_DOC_PREFIX   same as -Prefix (the parameter wins)
+# Env:    AGENTIC_DOC_PREFIX    same as -Prefix (the parameter wins)
+#         AGENTIC_DOC_NO_PATH=1 refuse to touch the user PATH
 #
-# Requires: a Rust toolchain (https://rustup.rs) and an elevated PowerShell
-# session when the destination is not writable by the current user.
+# No administrator rights are required: the destination is under %LOCALAPPDATA%
+# and the PATH entry is set for the current user only.
+#
+# Requires a Rust toolchain (https://rustup.rs).
 
 [CmdletBinding()]
 param(
@@ -17,7 +19,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Prog = "agentic-doc"
-$DefaultPrefix = Join-Path $env:ProgramFiles "agentic-doc"
+$DefaultPrefix = Join-Path $env:LOCALAPPDATA "Programs\agentic-doc"
 
 function Fail([string]$Message) {
     Write-Error "Error: $Message"
@@ -51,26 +53,6 @@ if (-not $cargo) {
     Fail "cargo not found. Install a Rust toolchain (https://rustup.rs) and re-run."
 }
 
-# --- privileges --------------------------------------------------------------
-
-$Bindir = Join-Path $Prefix "bin"
-$Binary = Join-Path $Bindir "$Prog.exe"
-
-$identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-$principal = New-Object Security.Principal.WindowsPrincipal($identity)
-$isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-
-if (-not $isAdmin) {
-    $writable = (Test-Path $Prefix) -and (
-        Test-Path $Bindir
-    ) -and (
-        (Get-Item $Bindir).Attributes -notmatch "ReadOnly"
-    )
-    if (-not $writable) {
-        Fail "cannot write to $Bindir (administrator privileges are required).`nRe-run from an elevated PowerShell:`n  .\install.ps1 -Prefix `"$Prefix`""
-    }
-}
-
 # --- build -------------------------------------------------------------------
 
 Write-Host "Building $Prog (release)..."
@@ -81,6 +63,9 @@ if (-not (Test-Path $Built)) {
 }
 
 # --- install -----------------------------------------------------------------
+
+$Bindir = Join-Path $Prefix "bin"
+$Binary = Join-Path $Bindir "$Prog.exe"
 
 if (-not (Test-Path $Bindir)) {
     New-Item -ItemType Directory -Path $Bindir -Force | Out-Null
@@ -109,18 +94,22 @@ if (-not $After) {
     Fail "the installed binary at $Binary failed to run."
 }
 
-# --- PATH (machine scope) ----------------------------------------------------
+# --- PATH (current user) -----------------------------------------------------
 
-$machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-if ($null -eq $machinePath) { $machinePath = "" }
-$entries = $machinePath.Split(";") | Where-Object { $_ -ne "" }
-if ($entries -notcontains $Bindir) {
-    $newPath = (@($entries) + $Bindir) -join ";"
-    [Environment]::SetEnvironmentVariable("Path", $newPath, "Machine")
-    Write-Host "Added to PATH (machine): $Bindir"
-    Write-Host "Open a new terminal for the change to take effect."
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if ($null -eq $userPath) { $userPath = "" }
+$entries = $userPath.Split(";") | Where-Object { $_ -ne "" }
+
+if ($entries -contains $Bindir) {
+    Write-Host "Already in PATH (user): $Bindir"
+} elseif ($env:AGENTIC_DOC_NO_PATH -eq "1") {
+    Write-Warning "$Bindir is not in PATH; add it yourself."
 } else {
-    Write-Host "Already in PATH (machine): $Bindir"
+    # Prepend so this copy wins over any other one.
+    $newPath = (@($Bindir) + $entries) -join ";"
+    [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+    Write-Host "Added to PATH (user): $Bindir"
+    Write-Host "Open a new terminal for the change to take effect."
 }
 
 Write-Host "Version:   $After (before: $Before)"

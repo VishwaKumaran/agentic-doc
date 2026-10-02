@@ -134,6 +134,54 @@ case $prefix in
 *) prefix=$PWD/$prefix ;;
 esac
 
+# --- privileges --------------------------------------------------------------
+
+bindir=$prefix/bin
+binary=$bindir/$PROG
+
+am_root=no
+if [ "$(id -u)" -eq 0 ]; then
+	am_root=yes
+fi
+
+# Building as the invoking user keeps target/ and the cargo home theirs and
+# reuses their dependency cache; sudo tells us who invoked it.
+invoker=${SUDO_USER:-}
+work_as_user=no
+if [ "$am_root" = yes ] && [ -n "$invoker" ] && [ "$invoker" != root ]; then
+	work_as_user=yes
+fi
+
+# Walk up to the nearest directory that exists: creating the missing ones
+# succeeds exactly when their closest existing ancestor is writable.
+probe=$bindir
+while [ ! -d "$probe" ]; do
+	parent=$(dirname -- "$probe")
+	if [ "$parent" = "$probe" ]; then
+		break
+	fi
+	probe=$parent
+done
+
+writable=no
+if [ "$am_root" = yes ] || [ -w "$probe" ]; then
+	writable=yes
+fi
+
+if [ "$writable" = no ]; then
+	if [ -f "$0" ]; then
+		case $0 in
+		*/*) rerun="sudo $0 --prefix $prefix" ;;
+		*) rerun="sudo ./$0 --prefix $prefix" ;;
+		esac
+	else
+		rerun="curl -fsSL https://raw.githubusercontent.com/$repo/$ref/install.sh | sudo sh -s -- --prefix $prefix"
+	fi
+	die "cannot write to $bindir (root privileges are required).
+Re-run with:
+  $rerun"
+fi
+
 # --- locate the checkout -----------------------------------------------------
 
 # Running as ./install.sh, $0 is the script; piped to a shell, $0 is the shell
@@ -155,6 +203,11 @@ if [ -z "$checkout" ]; then
 		die "could not obtain the agentic-doc source: curl (or wget), tar and network are required outside a checkout."
 	fi
 	checkout=$fetched_dir
+	# The tree was downloaded by root into a root-only directory; hand it to
+	# the invoking user so the build below can run as them.
+	if [ "$work_as_user" = yes ]; then
+		chown -R "$invoker" "$cleanup_dir" 2>/dev/null || true
+	fi
 	printf 'Downloaded source: %s\n' "$checkout"
 fi
 
@@ -169,7 +222,6 @@ find_cargo() {
 		command -v cargo
 		return 0
 	fi
-	invoker=${SUDO_USER:-}
 	if [ -n "$invoker" ] && [ "$invoker" != root ]; then
 		home=$(eval printf '%s' "~$invoker")
 		if [ -x "$home/.cargo/bin/cargo" ]; then
@@ -182,53 +234,16 @@ find_cargo() {
 
 cargo_bin=$(find_cargo) || die "cargo not found. Install a Rust toolchain (https://rustup.rs) and re-run."
 
-# --- privileges --------------------------------------------------------------
-
-bindir=$prefix/bin
-binary=$bindir/$PROG
-
-am_root=no
-if [ "$(id -u)" -eq 0 ]; then
-	am_root=yes
-fi
-
-# Walk up to the nearest directory that exists: creating the missing ones
-# succeeds exactly when their closest existing ancestor is writable.
-probe=$bindir
-while [ ! -d "$probe" ]; do
-	parent=$(dirname -- "$probe")
-	if [ "$parent" = "$probe" ]; then
-		break
-	fi
-	probe=$parent
-done
-
-writable=no
-if [ "$am_root" = yes ] || [ -w "$probe" ]; then
-	writable=yes
-fi
-
-if [ "$writable" = no ]; then
-	if [ -f "$0" ]; then
-		rerun="sudo $0 --prefix $prefix"
-	else
-		rerun="curl -fsSL https://raw.githubusercontent.com/$repo/$ref/install.sh | sudo sh -s -- --prefix $prefix"
-	fi
-	die "cannot write to $bindir (root privileges are required).
-Re-run with:
-  $rerun"
-fi
-
 # --- build -------------------------------------------------------------------
 
 printf 'Building %s (release)...\n' "$PROG"
 
-if [ "$am_root" = yes ] && [ -n "${SUDO_USER:-}" ] && [ "${SUDO_USER:-}" != root ]; then
+if [ "$work_as_user" = yes ]; then
 	# Build as the invoking user so target/ and the cargo home stay theirs.
-	if sudo -u "$SUDO_USER" -H "$cargo_bin" build --release; then
+	if sudo -u "$invoker" -H "$cargo_bin" build --release; then
 		:
 	else
-		printf 'Warning: could not build as %s; building as root.\n' "$SUDO_USER" >&2
+		printf 'Warning: could not build as %s; building as root.\n' "$invoker" >&2
 		"$cargo_bin" build --release
 	fi
 else

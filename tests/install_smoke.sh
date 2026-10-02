@@ -67,4 +67,15 @@ if (cd "$elsewhere" && cat "$root/install.sh" | AGENTIC_DOC_FETCH=0 sh -s -- --p
 	fail "AGENTIC_DOC_FETCH=0 should have refused to fetch a source"
 fi
 
+# 7. An unwritable prefix is refused before anything is downloaded.
+if [ "$(id -u)" -ne 0 ]; then
+	refused=$(cd "$elsewhere" && cat "$root/install.sh" | sh -s -- --prefix /usr/local 2>&1) &&
+		fail "install.sh should have refused to write to /usr/local"
+	case $refused in
+	*"Downloaded source"*) fail "the installer downloaded the source before refusing" ;;
+	*"curl -fsSL"*) ;;
+	*) fail "the piped refusal does not print the curl command: $refused" ;;
+	esac
+fi
+
 printf 'OK: install smoke test passed\n'

@@ -14,10 +14,46 @@ which documentation pages are potentially outdated.
 
 ## Installation
 
-**Current method (Rust):**
+**Per-user (Rust, any OS):**
 
 ```bash
 cargo install --git https://github.com/VishwaKumaran/agentic-doc
+```
+
+This puts `agentic-doc` in `~/.cargo/bin`, which is on **your** PATH only.
+
+**System-wide (macOS, Linux, Windows) — every user on the machine:**
+
+Builds from a checkout of this repository (nothing is downloaded, no release is
+required) and installs the binary into a shared location that every user finds
+on their PATH. Requires a Rust toolchain ([rustup.rs](https://rustup.rs)).
+
+```bash
+# macOS / Linux
+git clone https://github.com/VishwaKumaran/agentic-doc
+cd agentic-doc
+sudo ./install.sh
+```
+
+```powershell
+# Windows — from an elevated PowerShell
+git clone https://github.com/VishwaKumaran/agentic-doc
+cd agentic-doc
+.\install.ps1
+```
+
+| Option | Effect |
+|---|---|
+| `--prefix DIR` / `-Prefix DIR` | installation prefix — default `/usr/local` on Unix (binary in `/usr/local/bin`), `%ProgramFiles%\agentic-doc` on Windows |
+| `AGENTIC_DOC_PREFIX` | same as `--prefix`; the command line wins |
+
+Re-running the installer **updates** the binary in place — there is no separate
+uninstall step. On Unix, `--prefix` also makes the installer testable without
+root, e.g. `./install.sh --prefix "$(mktemp -d)"`; that is what
+`tests/install_smoke.sh` does:
+
+```bash
+sh tests/install_smoke.sh
 ```
 
 **Install the agent skill (available now):**

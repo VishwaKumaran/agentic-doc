@@ -60,6 +60,48 @@ agentic-doc relations list --json
 
 All three checks must pass before proceeding.
 
+### Step 0 — Understand the workspace and project structure
+
+**Run this step before Step 1. It is mandatory.**
+
+The goal is to determine the correct directory where Markdown files must be written,
+so that the agent never falls back to writing at the workspace root by default.
+
+```bash
+# 1. Read the workspace config to locate the project
+cat .agentic-doc/config.json
+# Fields used: project_path (path to the source project relative to the workspace)
+
+# 2. List the top-level directories of the docs workspace
+ls -1
+# Look for: docs/, content/, pages/, src/, or any named directory containing .md files
+
+# 3. Find where existing .md files live
+find . -name "*.md" -not -path "./.agentic-doc/*" -not -path "./node_modules/*" | head -30
+# Identify the common prefix directory (e.g. docs/, content/, fr/, en/, …)
+
+# 4. List the top-level directories of the source project
+ls -1 <project_path>
+# Understand the source layout (src/, lib/, …) to anticipate identifier prefixes
+```
+
+From these four observations, derive **docs_dir**: the directory inside the workspace
+where all Markdown pages live. Examples:
+
+| Observation | docs_dir |
+|---|---|
+| All .md files are under `docs/` | `docs/` |
+| All .md files are under `content/` (Nuxt/Content) | `content/` |
+| All .md files are directly at the root (no sub-directory) | `.` (root) |
+| All .md files are under `fr/` or `en/` | use the matching language sub-directory |
+
+**Record `docs_dir` explicitly.** Every new file created in Step 6b MUST be placed
+inside `docs_dir`, not at the workspace root unless `docs_dir` is `.`.
+
+If the workspace has no existing Markdown files yet (brand-new workspace), examine
+`nuxt.config.ts` / `package.json` to detect a Nuxt/Content site; otherwise default
+`docs_dir` to `.`.
+
 ### Step 1 — Changed elements
 
 ```bash
@@ -168,11 +210,20 @@ covers the topic.
 
 **File destination (in priority order):**
 
-1. Directory inferred from existing relations (where already-documented pages live).
-2. Detected Nuxt/Content site (`nuxt.config.ts` + `package.json` + `content/`)
-   → write into `content/`. Add front-matter (`title`, `description`) + H1.
-3. Root of the docs workspace.
-4. If a template page exists in the corpus: follow it; it overrides the rules above.
+> **The `docs_dir` derived in Step 0 is the authoritative destination.**
+> Never write a file at the workspace root unless `docs_dir` is explicitly `.`.
+> When in doubt, re-read the result of Step 0 before writing.
+
+1. `docs_dir` from Step 0 — **always the primary rule**.
+   - Place the new file directly inside `docs_dir/` (e.g. `docs/authentication.md`).
+   - If existing pages in `docs_dir` are organised in sub-directories by topic,
+     follow that convention (e.g. `docs/auth/authentication.md`).
+2. Directory inferred from existing relations (where already-documented pages live) —
+   use this to refine the sub-directory within `docs_dir`, never to override it.
+3. Detected Nuxt/Content site (`nuxt.config.ts` + `package.json` + `content/`)
+   → `docs_dir` is `content/`. Add front-matter (`title`, `description`) + H1.
+4. If a template page exists in the corpus: follow its location; it overrides the
+   sub-directory but not the `docs_dir` root.
 
 **Forbidden directories:** `public/`, `.nuxt/`, `node_modules/`, `.agentic-doc/`.
 
@@ -306,6 +357,9 @@ On individual failure: continue and report. Never stop at the first refusal.
 
 ## Pitfalls
 
+- **Writing at the workspace root instead of `docs_dir`**: the most common mistake.
+  Always run Step 0 and record `docs_dir` before writing. If existing pages live in
+  `docs/`, every new page must also go into `docs/`, never at the workspace root.
 - The `MarkdownAnalyzer` ignores names starting with `.`, and also `node_modules`,
   `target`, `dist`, `build`, `.agentic-doc`, `.git`. **`public/` is NOT ignored**:
   a `.md` placed there becomes a "document". Do not write there.

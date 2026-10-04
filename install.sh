@@ -48,6 +48,7 @@ Environment:
   AGENTIC_DOC_TARBALL    source tarball to use (path or URL) instead of GitHub
   AGENTIC_DOC_FETCH=0    never download; a local checkout is then required
   AGENTIC_DOC_NO_PATH=1  do not add the installation directory to the PATH
+  AGENTIC_DOC_NO_COLOR=1 force plain output on a terminal (no colours, no bar)
 
 No privileges are required. Requires a Rust toolchain (https://rustup.rs),
 plus curl (or wget) and tar when there is no checkout.
@@ -57,6 +58,218 @@ EOF
 die() {
 	printf 'Error: %s\n' "$1" >&2
 	exit 1
+}
+
+# --- presentation ------------------------------------------------------------
+#
+# The installer shows a small progress UI: a numbered list of steps and, for
+# the build, a progress bar with the number of crates compiled and the elapsed
+# time. Colours and animation are only enabled when stdout is a terminal, so a
+# piped install (`curl ... | sh > log`) stays plain, greppable and
+# deterministic -- nothing below depends on the display. Set
+# AGENTIC_DOC_NO_COLOR=1 (or NO_COLOR=1) to force the plain form on a terminal.
+
+plain=1
+if [ -t 1 ] && [ -z "${AGENTIC_DOC_NO_COLOR:-}${NO_COLOR:-}" ]; then
+	plain=0
+fi
+
+# Terminal width, clamped, so the bar never wraps. tput is optional.
+columns=$(tput cols 2>/dev/null) || columns=80
+case $columns in
+'' | *[!0-9]*) columns=80 ;;
+esac
+[ "$columns" -ge 40 ] || columns=40
+
+# Unicode glyphs only when the locale claims UTF-8 support.
+utf8=0
+case ${LC_ALL:-${LC_CTYPE:-${LANG:-}}} in
+*UTF-8* | *utf8* | *UTF8* | *utf-8*) utf8=1 ;;
+esac
+if [ "$utf8" = 1 ]; then
+	bar_full='█'
+	bar_empty='░'
+	mark_ok='✓'
+	mark_tip='›'
+else
+	bar_full='#'
+	bar_empty='-'
+	mark_ok='ok'
+	mark_tip='>'
+fi
+
+# Colours, unless the output is not a terminal or the user opted out.
+c_reset= c_bold= c_dim= c_cyan= c_green= c_yellow= c_red=
+if [ "$plain" = 0 ]; then
+	esc=$(printf '\033')
+	c_reset=$esc'[0m'
+	c_bold=$esc'[1m'
+	c_dim=$esc'[2m'
+	c_cyan=$esc'[36m'
+	c_green=$esc'[32m'
+	c_yellow=$esc'[33m'
+	c_red=$esc'[31m'
+fi
+
+step_total=5
+step_current=0
+
+# Banner shown once, before the first step.
+ui_title() {
+	if [ "$plain" = 0 ]; then
+		printf '\n%s%s%s %sinstaller%s\n' \
+			"$c_bold" "$PROG" "$c_reset" "$c_dim" "$c_reset"
+	else
+		printf '%s installer\n' "$PROG"
+	fi
+}
+
+# Starts a new step, e.g. "[2/5] Locating the Rust toolchain".
+step_begin() {
+	step_current=$((step_current + 1))
+	printf '\n%s[%d/%d]%s %s%s%s\n' \
+		"$c_cyan" "$step_current" "$step_total" "$c_reset" "$c_bold" "$1" "$c_reset"
+}
+
+# A detail line under the current step.
+step_note() {
+	printf '      %s%s %s%s\n' "$c_dim" "$mark_tip" "$1" "$c_reset"
+}
+
+# An indented continuation line, e.g. a command to run by hand.
+step_hint() {
+	printf '        %s%s%s\n' "$c_dim" "$1" "$c_reset"
+}
+
+# Marks the current step as done.
+step_ok() {
+	printf '      %s%s%s %s\n' "$c_green" "$mark_ok" "$c_reset" "$1"
+}
+
+# Draws a bar of $3 columns, $1 of $2 units filled.
+draw_bar() {
+	filled=$1
+	total=$2
+	width=$3
+	[ "$total" -gt 0 ] || total=1
+	cols=$((filled * width / total))
+	if [ "$cols" -gt "$width" ]; then
+		cols=$width
+	fi
+	bar=
+	i=0
+	while [ "$i" -lt "$width" ]; do
+		if [ "$i" -lt "$cols" ]; then
+			bar=$bar$bar_full
+		else
+			bar=$bar$bar_empty
+		fi
+		i=$((i + 1))
+	done
+	printf '%s' "$bar"
+}
+
+# Draws a moving segment of $2 columns inside a bar of $3 columns.
+sweep_bar() {
+	pos=$1
+	span=$2
+	width=$3
+	bar=
+	i=0
+	while [ "$i" -lt "$width" ]; do
+		if [ "$i" -ge "$pos" ] && [ "$i" -lt $((pos + span)) ]; then
+			bar=$bar$bar_full
+		else
+			bar=$bar$bar_empty
+		fi
+		i=$((i + 1))
+	done
+	printf '%s' "$bar"
+}
+
+# Runs a command under a progress bar and records the outcome in
+# $build_crates / $build_secs for the caller to report. On a terminal the
+# command's output is captured and replayed (tail) only if it fails; otherwise
+# it streams straight through, keeping logs and pipes predictable.
+build_with_progress() {
+	build_crates=0
+	build_secs=0
+	start=$(date +%s)
+
+	if [ "$plain" = 1 ]; then
+		rc=0
+		"$@" || rc=$?
+		build_secs=$(( $(date +%s) - start ))
+		return "$rc"
+	fi
+
+	# A cold build compiles about one unit per package in Cargo.lock, so that
+	# count makes a usable total; without a lock file the bar sweeps instead.
+	total=0
+	if [ -f Cargo.lock ]; then
+		total=$(grep -c '^\[\[package\]\]' Cargo.lock 2>/dev/null) || total=0
+	fi
+
+	log=$(mktemp 2>/dev/null) || {
+		"$@"
+		return $?
+	}
+
+	"$@" >"$log" 2>&1 &
+	cpid=$!
+
+	width=$((columns - 24))
+	if [ "$width" -gt 32 ]; then
+		width=32
+	fi
+	[ "$width" -ge 10 ] || width=10
+	span=6
+	pos=0
+	pad=$(printf '%100s' '')
+
+	while kill -0 "$cpid" 2>/dev/null; do
+		crates=$(grep -c 'Compiling' "$log" 2>/dev/null) || crates=0
+		secs=$(( $(date +%s) - start ))
+		if [ "$crates" = 1 ]; then
+			unit=crate
+		else
+			unit=crates
+		fi
+		if [ "$total" -gt 0 ]; then
+			bar=$(draw_bar "$crates" "$total" "$width")
+		else
+			bar=$(sweep_bar "$pos" "$span" "$width")
+		fi
+		printf '\r      %s%s%s  %s%ss%s  %s%s %s%s' \
+			"$c_cyan" "$bar" "$c_reset" \
+			"$c_dim" "$secs" "$c_reset" \
+			"$c_dim" "$crates" "$unit" "$c_reset"
+		pos=$((pos + 1))
+		if [ "$pos" -gt "$width" ]; then
+			pos=0
+		fi
+		sleep 0.1 2>/dev/null || sleep 1
+	done
+
+	rc=0
+	wait "$cpid" || rc=$?
+	build_secs=$(( $(date +%s) - start ))
+	build_crates=$(grep -c 'Compiling' "$log" 2>/dev/null) || build_crates=0
+
+	printf '\r%s\r' "$pad"
+
+	if [ "$rc" -ne 0 ]; then
+		printf '      %sbuild failed after %ss%s\n' \
+			"$c_red" "$build_secs" "$c_reset" >&2
+		if [ -f "$log" ]; then
+			tail -n 40 "$log" >&2 || true
+		fi
+		rm -f "$log"
+		return "$rc"
+	fi
+
+	rm -f "$log"
+	return 0
 }
 
 # --- obtaining the source ----------------------------------------------------
@@ -147,6 +360,10 @@ fi
 
 # --- locate the checkout -----------------------------------------------------
 
+ui_title
+
+step_begin "Locating source"
+
 # Running as ./install.sh, $0 is the script; piped to a shell, $0 is the shell
 # and the current directory is the only candidate.
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" 2>/dev/null && pwd) || script_dir=$PWD
@@ -166,25 +383,38 @@ if [ -z "$checkout" ]; then
 		die "could not obtain the agentic-doc source: curl (or wget), tar and network are required outside a checkout."
 	fi
 	checkout=$fetched_dir
-	printf 'Downloaded source: %s\n' "$checkout"
+	step_note "downloaded $repo@$ref"
+else
+	step_note "checkout $checkout"
 fi
 
 cd "$checkout"
 
 # --- locate cargo ------------------------------------------------------------
 
+step_begin "Locating the Rust toolchain"
 cargo_bin=$(command -v cargo) || die "cargo not found. Install a Rust toolchain (https://rustup.rs) and re-run."
+step_note "$("$cargo_bin" --version 2>/dev/null || printf 'cargo')"
 
 # --- build -------------------------------------------------------------------
 
-printf 'Building %s (release)...\n' "$PROG"
-"$cargo_bin" build --release
+step_begin "Building $PROG (release)"
+build_with_progress "$cargo_bin" build --release
+if [ "${build_crates:-0}" = 1 ]; then
+	step_ok "compiled in ${build_secs}s (${build_crates} crate)"
+elif [ "${build_crates:-0}" -gt 1 ]; then
+	step_ok "compiled in ${build_secs}s (${build_crates} crates)"
+else
+	step_ok "compiled in ${build_secs}s"
+fi
 
 target_dir=${CARGO_TARGET_DIR:-target}
 built=$target_dir/release/$PROG
 [ -x "$built" ] || die "the build did not produce $built."
 
 # --- install -----------------------------------------------------------------
+
+step_begin "Installing to $prefix"
 
 bindir=$prefix/bin
 binary=$bindir/$PROG
@@ -201,10 +431,13 @@ if [ -x "$binary" ]; then
 fi
 
 if [ -x "$binary" ] && cmp -s "$built" "$binary"; then
-	printf 'Already up to date: %s\n' "$binary"
+	step_ok "Already up to date: $binary"
 else
 	install -m 0755 "$built" "$binary"
-	printf 'Installed: %s\n' "$binary"
+	step_ok "Installed: $binary"
+	if [ "$before" != none ] && [ "$before" != unknown ]; then
+		step_note "replaced $before"
+	fi
 fi
 
 if after=$("$binary" --version 2>/dev/null); then
@@ -212,8 +445,6 @@ if after=$("$binary" --version 2>/dev/null); then
 else
 	die "the installed binary at $binary failed to run."
 fi
-
-printf 'Version:   %s (before: %s)\n' "$after" "$before"
 
 # --- PATH --------------------------------------------------------------------
 
@@ -241,27 +472,36 @@ add_to_path() {
 	if [ -f "$rc" ]; then
 		for needle in "$bindir" "$entry" "$marker"; do
 			if grep -Fq "$needle" "$rc"; then
-				printf 'PATH already set in %s\n' "$rc"
+				step_ok "PATH already set in $rc"
 				return 0
 			fi
 		done
 	fi
 
 	if printf '\n%s\nexport PATH="%s:$PATH"\n' "$marker" "$entry" >>"$rc" 2>/dev/null; then
-		printf 'Added to PATH in %s:\n  export PATH="%s:$PATH"\n' "$rc" "$entry"
-		printf 'Open a new terminal (or run that line) to use %s as a command.\n' "$PROG"
+		printf '      Added to %s:\n' "$rc"
+		step_hint "export PATH=\"$entry:\$PATH\""
+		printf '      Open a new terminal (or run that line) to use %s as a command.\n' "$PROG"
+		step_ok "PATH updated"
 	else
-		printf 'Warning: could not update %s; add this line yourself:\n  export PATH="%s:$PATH"\n' "$rc" "$entry" >&2
+		printf '      %sWarning: could not update %s; add this line yourself:%s\n' \
+			"$c_yellow" "$rc" "$c_reset" >&2
+		step_hint "export PATH=\"$entry:\$PATH\"" >&2
 	fi
 }
 
+step_begin "Configuring PATH"
+
 case ":$PATH:" in
 *":$bindir:"*)
-	printf '%s is already in PATH\n' "$bindir"
+	step_ok "$bindir is already in PATH"
 	;;
 *)
 	if [ "${AGENTIC_DOC_NO_PATH:-0}" = 1 ]; then
-		printf 'Warning: %s is not in PATH; add this line yourself:\n  export PATH="%s:$PATH"\n' "$bindir" "$bindir" >&2
+		printf '      %sWarning: %s is not in PATH; add this line yourself:%s\n' \
+			"$c_yellow" "$bindir" "$c_reset" >&2
+		step_hint "export PATH=\"$bindir:\$PATH\"" >&2
+		step_ok "PATH left unchanged (AGENTIC_DOC_NO_PATH=1)"
 	else
 		add_to_path "$(profile_file)"
 	fi
@@ -277,7 +517,18 @@ for dir in $(printf '%s' "$PATH" | tr ':' ' '); do
 		break
 	fi
 	if [ -x "$dir/$PROG" ]; then
-		printf 'Warning: an earlier copy in PATH may shadow this install: %s\n' "$dir/$PROG" >&2
+		printf '      %sWarning: an earlier copy in PATH may shadow this install: %s%s\n' \
+			"$c_yellow" "$dir/$PROG" "$c_reset" >&2
 		break
 	fi
 done
+
+# --- done --------------------------------------------------------------------
+
+printf '\n'
+if [ "$plain" = 0 ]; then
+	printf '%s%s%s %s%s%s is ready at %s\n' \
+		"$c_green" "$mark_ok" "$c_reset" "$c_bold" "$after" "$c_reset" "$binary"
+else
+	printf '%s is ready at %s\n' "$after" "$binary"
+fi

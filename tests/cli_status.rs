@@ -136,7 +136,7 @@ fn test_cli_status_m1_scenario() {
         .arg("status")
         .assert()
         .success()
-        .stdout(predicate::str::contains("auth.py::refresh_token"));
+        .stdout(predicate::str::contains("auth.py::refresh_token  added"));
 
     // 6. status avec --json
     let mut status_json_cmd = Command::cargo_bin("agentic-doc").unwrap();
@@ -277,6 +277,8 @@ fn test_cli_status_fichier_ajoute_ne_liste_pas_ses_elements() {
         .success()
         .stdout(predicate::str::contains("  other.py\n"))
         .stdout(predicate::str::contains("other.py::").not())
+        // Les fichiers non modifiés ne sont plus énumérés : seul leur compte reste.
+        .stdout(predicate::str::contains("Unchanged:").not())
         .stdout(predicate::str::contains(
             "1 changed file, 1 unchanged file, 2 changes (1 inside added or removed files)",
         ));

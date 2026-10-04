@@ -65,7 +65,15 @@ fn test_cli_docs_m2_scenario() {
         .assert()
         .success()
         .stdout(predicate::str::contains("authentication.md"))
-        .stdout(predicate::str::contains("AuthService was modified."));
+        .stdout(predicate::str::contains("AuthService was modified."))
+        // Sortie compacte : le document porte sa confiance, chaque raison est suivie
+        // directement de sa relation — plus de sections « Reason: » / « Relation: » /
+        // « Confidence: ».
+        .stdout(predicate::str::contains("Reason:").not())
+        .stdout(predicate::str::contains("Confidence:").not())
+        .stdout(predicate::str::contains(
+            "auth.py::AuthService → authentication.md",
+        ));
 
     // 7. docs --json
     let mut docs_json_cmd = Command::cargo_bin("agentic-doc").unwrap();

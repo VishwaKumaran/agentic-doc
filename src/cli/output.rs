@@ -35,10 +35,10 @@ pub fn format_setup_text(result: &SetupResult) -> String {
     };
 
     format!(
-        "Project docs:\n  {}\n\nProject:\n  {}\n\n{}",
+        "{}\n  docs:    {}\n  project: {}",
+        status_msg,
         result.project_docs.display(),
-        result.project.display(),
-        status_msg
+        result.project.display()
     )
 }
 
@@ -57,7 +57,7 @@ pub fn format_setup_json(result: &SetupResult) -> String {
 
 pub fn format_scan_text(result: &ScanResult) -> String {
     format!(
-        "Project scanned.\n\nProject:\n  {}\n\nFiles analyzed:\n  {}\n\nElements found:\n  {}\n\nSnapshot:\n  .agentic-doc/snapshots/{}.json",
+        "Project scanned.\n  project:  {}\n  files:    {}\n  elements: {}\n  snapshot: .agentic-doc/snapshots/{}.json",
         result.project.root.display(),
         result.files_count,
         result.elements_count,
@@ -120,11 +120,11 @@ pub fn format_status_text(result: &StatusResult) -> String {
     if result.previous_snapshot.is_none() {
         if result.changeset.changes.is_empty() {
             // Premier run sans aucun fichier analysé — pas de changements à lister
-            return "Project status\n\nFirst analysis — no snapshot recorded yet.\nAll elements are reported as added.".to_string();
+            return "Project status\n\nFirst analysis — no snapshot recorded yet. All elements are reported as added.".to_string();
         }
 
         let mut out = String::from(
-            "Project status\n\nFirst analysis — no snapshot recorded yet.\nAll elements are reported as added.\n\nAdded:\n",
+            "Project status\n\nFirst analysis — no snapshot recorded yet. All elements are reported as added.\n\nAdded:\n",
         );
 
         let wholesale = wholesale_files(&result.changeset.changes);
@@ -137,14 +137,14 @@ pub fn format_status_text(result: &StatusResult) -> String {
         }
 
         for file in &added_files {
-            out.push_str(&format!("  {}\n\n", file));
+            out.push_str(&format!("  {}\n", file));
         }
 
         // Éléments dont le fichier n'est pas rapporté en bloc : aucun au premier run,
         // mais la règle reste valable si un analyzer émet des éléments hors fichier.
         for c in &result.changeset.changes {
             if c.element_kind != SourceElementKind::File && !wholesale.contains(c.file.as_str()) {
-                out.push_str(&format!("  {}\n    added\n\n", c.element_id.0));
+                out.push_str(&format!("  {}\n", c.element_id.0));
             }
         }
 
@@ -158,7 +158,7 @@ pub fn format_status_text(result: &StatusResult) -> String {
         };
 
         out.push_str(&format!(
-            "Summary:\n  {} {} added, 0 unchanged files, {} {}{}",
+            "\nSummary: {} {} added, 0 unchanged files, {} {}{}",
             files_added,
             file_str,
             total_changes,
@@ -174,31 +174,36 @@ pub fn format_status_text(result: &StatusResult) -> String {
         return "Project status\n\nNo changes since the last snapshot.".to_string();
     }
 
-    let mut out = String::from("Project status\n\nChanged:\n");
-
     let wholesale = wholesale_files(&result.changeset.changes);
 
-    let mut affected_files = std::collections::HashSet::new();
+    // Fichiers touchés, dédupliqués et triés. Les fichiers « non modifiés » ne sont
+    // plus énumérés : leur nombre suffit, et figure déjà dans le résumé.
+    let mut changed_files = std::collections::BTreeSet::new();
     for c in &result.changeset.changes {
-        affected_files.insert(&c.file);
-        if c.element_kind == SourceElementKind::File {
-            out.push_str(&format!("  {}\n\n", c.file));
-        } else if !wholesale.contains(c.file.as_str()) {
-            let action = match c.kind {
-                ChangeKind::Added => "added",
-                ChangeKind::Removed => "removed",
-                ChangeKind::Modified => "modified",
-            };
-            out.push_str(&format!("  {}\n    {}\n\n", c.element_id.0, action));
+        changed_files.insert(c.file.as_str());
+    }
+
+    let mut out = String::from("Project status\n\nChanged:\n");
+
+    // Un fichier par bloc : son chemin, puis ses éléments modifiés indentés.
+    for file in &changed_files {
+        out.push_str(&format!("  {}\n", file));
+        for c in &result.changeset.changes {
+            if c.file.as_str() == *file
+                && c.element_kind != SourceElementKind::File
+                && !wholesale.contains(c.file.as_str())
+            {
+                let action = match c.kind {
+                    ChangeKind::Added => "added",
+                    ChangeKind::Removed => "removed",
+                    ChangeKind::Modified => "modified",
+                };
+                out.push_str(&format!("    {}  {}\n", c.element_id.0, action));
+            }
         }
     }
 
-    out.push_str("Unchanged:\n");
-    for u in &result.changeset.unchanged_files {
-        out.push_str(&format!("  {}\n", u));
-    }
-
-    let changed_files_count = affected_files.len();
+    let changed_files_count = changed_files.len();
     let unchanged_files_count = result.changeset.unchanged_files.len();
     let total_changes = result.changeset.changes.len();
 
@@ -219,7 +224,7 @@ pub fn format_status_text(result: &StatusResult) -> String {
     };
 
     out.push_str(&format!(
-        "\nSummary:\n  {} changed {}, {} unchanged {}, {} {}{}",
+        "\nSummary: {} changed {}, {} unchanged {}, {} {}{}",
         changed_files_count,
         file_str,
         unchanged_files_count,
@@ -324,29 +329,22 @@ pub fn format_docs_text(result: &DocsResult) -> String {
             let mut out = String::from("Potentially impacted documentation\n\n");
 
             for impact in impacts {
-                out.push_str(&format!("{}\n\n", impact.document.0));
-
-                out.push_str("Reason:\n");
-                for r in &impact.reasons {
-                    out.push_str(&format!("  {}\n", r.change.reason));
-                }
-                out.push('\n');
-
-                out.push_str("Relation:\n");
-                for r in &impact.reasons {
-                    out.push_str(&format!(
-                        "  {} → {}\n",
-                        r.relation.source.0, r.relation.target.0
-                    ));
-                }
-                out.push('\n');
-
                 let conf_str = match impact.confidence {
                     Confidence::High => "high",
                     Confidence::Medium => "medium",
                     Confidence::Low => "low",
                 };
-                out.push_str(&format!("Confidence:\n  {}\n\n", conf_str));
+
+                // Un document par bloc : sa confiance, puis une ligne par raison,
+                // avec la relation concernée juste en dessous.
+                out.push_str(&format!("{}  ({})\n", impact.document.0, conf_str));
+                for r in &impact.reasons {
+                    out.push_str(&format!(
+                        "  {}\n    {} → {}\n",
+                        r.change.reason, r.relation.source.0, r.relation.target.0
+                    ));
+                }
+                out.push('\n');
             }
 
             if !warnings.is_empty() {
@@ -354,10 +352,11 @@ pub fn format_docs_text(result: &DocsResult) -> String {
                 for w in warnings {
                     out.push_str(&format!("  {}\n", w));
                 }
+                out.push('\n');
             }
 
             out.push_str(
-                "\nRun 'agentic-doc scan' once the documentation is updated to record the new baseline.",
+                "Run 'agentic-doc scan' once the documentation is updated to record the new baseline.",
             );
 
             out.trim_end().to_string()
@@ -412,37 +411,35 @@ pub fn format_docs_json(result: &DocsResult) -> String {
 }
 
 pub fn format_coverage_text(coverage: &crate::domain::coverage::Coverage, all: bool) -> String {
-    let mut out = String::from("Documentation coverage\n\nSummary:\n");
-    out.push_str(&format!("  {} documented directly\n", coverage.direct));
-    out.push_str(&format!("  {} documented via file\n", coverage.via_file));
-    out.push_str(&format!("  {} undocumented\n", coverage.undocumented));
+    let mut out = String::from("Documentation coverage\n\n");
     out.push_str(&format!("  {} elements total\n", coverage.total));
     out.push_str(&format!(
-        "  coverage: {}%\n\n",
+        "  {} documented directly, {} documented via file, {} undocumented\n",
+        coverage.direct, coverage.via_file, coverage.undocumented
+    ));
+    out.push_str(&format!(
+        "  coverage: {}%\n",
         (coverage.rate * 100.0).round() as u64
     ));
 
     if all {
         if !coverage.direct_entries.is_empty() {
-            out.push_str("Documented directly:\n");
+            out.push_str("\nDocumented directly:\n");
             append_grouped_entries(&mut out, &coverage.direct_entries);
-            out.push('\n');
         }
         if !coverage.via_file_entries.is_empty() {
-            out.push_str("Documented via file:\n");
+            out.push_str("\nDocumented via file:\n");
             append_grouped_entries(&mut out, &coverage.via_file_entries);
-            out.push('\n');
         }
     }
 
     if !coverage.undocumented_entries.is_empty() {
-        out.push_str("Undocumented:\n");
+        out.push_str("\nUndocumented:\n");
         append_grouped_entries(&mut out, &coverage.undocumented_entries);
-        out.push('\n');
     }
 
     out.push_str(&format!(
-        "Unreferenced documents: {}\n",
+        "\nUnreferenced documents: {}\n",
         coverage.unreferenced_documents.len()
     ));
     for doc in &coverage.unreferenced_documents {
@@ -464,7 +461,6 @@ fn append_grouped_entries(out: &mut String, entries: &[CoverageEntry]) {
         for entry in file_entries {
             out.push_str(&format!("    {}\n", entry.element.0));
         }
-        out.push('\n');
     }
 }
 
@@ -526,7 +522,7 @@ pub fn format_relations_list_text(result: &ListRelationsResult) -> String {
         return "No relations declared.".to_string();
     }
 
-    let mut out = String::from("Relations\n\n");
+    let mut out = String::from("Relations\n");
     for info in &result.relations {
         let rel = &info.relation;
         let conf_str = match rel.confidence {
@@ -619,20 +615,16 @@ pub fn format_relations_list_json(result: &ListRelationsResult) -> String {
 }
 
 pub fn format_relations_check_text(result: &CheckRelationsResult) -> String {
-    let mut out = String::from("Relations check\n\n");
     let summary = &result.summary;
     let total_relations = result.relations.len();
 
-    out.push_str(&format!("  {} relations\n", total_relations));
-    out.push_str(&format!(
-        "  {} source not found\n",
-        summary.sources_not_found
-    ));
-    out.push_str(&format!(
-        "  {} target not found\n",
-        summary.targets_not_found
-    ));
-    out.push_str(&format!("  {} duplicates\n\n", summary.duplicates));
+    let mut out = format!(
+        "Relations check\n  {} relations, {} source not found, {} target not found, {} duplicates\n",
+        total_relations,
+        summary.sources_not_found,
+        summary.targets_not_found,
+        summary.duplicates
+    );
 
     let mut sources_not_found = Vec::new();
     let mut targets_not_found = Vec::new();
@@ -655,19 +647,17 @@ pub fn format_relations_check_text(result: &CheckRelationsResult) -> String {
     }
 
     if !sources_not_found.is_empty() {
-        out.push_str("Sources not found:\n");
+        out.push_str("\nSources not found:\n");
         for line in sources_not_found {
             out.push_str(&format!("{}\n", line));
         }
-        out.push('\n');
     }
 
     if !targets_not_found.is_empty() {
-        out.push_str("Targets not found:\n");
+        out.push_str("\nTargets not found:\n");
         for line in targets_not_found {
             out.push_str(&format!("{}\n", line));
         }
-        out.push('\n');
     }
 
     out.trim_end().to_string()

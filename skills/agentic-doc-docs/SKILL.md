@@ -208,6 +208,47 @@ Writing rules:
 **Enrich an existing page first.** Create a new page only when no existing page
 covers the topic.
 
+---
+
+#### Content quality — mandatory standards
+
+Every page written or enriched MUST meet these standards. A page that contains only
+code snippets and a parameter list is **not acceptable**.
+
+**Write for all audiences.** Assume the reader is not the author of the code. Before
+any code block, explain in plain prose:
+- **What** this element does (its purpose, not just its name).
+- **Why** someone would use it (the problem it solves or the need it meets).
+- **When** to use it (and when NOT to use it, if relevant).
+- **How** it fits into the broader system (its relationship to other components).
+
+**Section quality bar (minimum for each section):**
+
+| Section | Minimum expected content |
+|---|---|
+| `Role` / `Rôle` | 2–4 sentences of prose. State the responsibility clearly. No bullet points here — explain as you would to a new team member. |
+| `Usage` / `Utilisation` | Step-by-step prose explaining the typical workflow, THEN a code example. Never start with a code block. Explain each step before showing it. |
+| `Key Elements` / `Éléments principaux` | For each parameter, attribute, or method: its name, its type if relevant, what it does, and a concrete example value or usage. Not just a one-liner. |
+| `Examples` / `Exemples` | At least two examples: a minimal/happy-path case and a realistic one with context. Each code block must be preceded by a sentence explaining what the example demonstrates. |
+
+**Prose-first rule.** Every code block must be preceded by at least one sentence of
+explanatory prose. A code block appearing immediately after a heading (with no
+prose between them) is a writing defect.
+
+**Contextual explanations.** When documenting a class or module that interacts with
+others (e.g. calls another service, depends on a config, emits events), mention
+those interactions in prose. Do not assume the reader will infer them from the code.
+
+**Error and edge cases.** If the source code handles errors, raises exceptions, or
+has known limitations, document them in a dedicated `Errors and edge cases` /
+`Erreurs et cas limites` subsection or as a note within the relevant section.
+
+**Avoid documentation that reads like a docstring.** A page must add value beyond
+what is already visible in the function signature. Focus on intent, context, and
+real-world usage — not on restating the type hints.
+
+---
+
 **File destination (in priority order):**
 
 > **The `docs_dir` derived in Step 0 is the authoritative destination.**
@@ -360,6 +401,12 @@ On individual failure: continue and report. Never stop at the first refusal.
 - **Writing at the workspace root instead of `docs_dir`**: the most common mistake.
   Always run Step 0 and record `docs_dir` before writing. If existing pages live in
   `docs/`, every new page must also go into `docs/`, never at the workspace root.
+- **Writing a page that is only code blocks**: a page made of a heading + code snippet
+  with no surrounding prose is not documentation — it is a copy of the source. Every
+  code block must be preceded by explanatory prose. Re-read the "Content quality"
+  section in 6b before writing.
+- **Documenting for the author, not the reader**: do not just restate what the
+  function signature already says. Explain purpose, context, and real-world usage.
 - The `MarkdownAnalyzer` ignores names starting with `.`, and also `node_modules`,
   `target`, `dist`, `build`, `.agentic-doc`, `.git`. **`public/` is NOT ignored**:
   a `.md` placed there becomes a "document". Do not write there.

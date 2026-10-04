@@ -285,6 +285,37 @@ The skill is located at `skills/agentic-doc-docs/SKILL.md`. It:
 
 ---
 
+## Versioning
+
+The CLI version lives in `Cargo.toml` (`[package].version`) and is reported by
+`agentic-doc --version`. A `pre-commit` hook bumps it automatically on **every
+commit** (patch by default), keeps `Cargo.lock` in sync, and stages both files
+so the new version is part of the commit itself.
+
+Enable it once per checkout:
+
+```bash
+sh scripts/install-hooks.sh   # sets core.hooksPath=scripts/git-hooks
+```
+
+Bump a different component manually:
+
+```bash
+sh scripts/bump-version.sh            # 0.1.0 -> 0.1.1 (patch)
+sh scripts/bump-version.sh --minor    # 0.1.0 -> 0.2.0
+sh scripts/bump-version.sh --major    # 0.1.0 -> 1.0.0
+```
+
+Skip the bump for a single commit (e.g. a docs-only or tooling commit):
+
+```bash
+AGENTIC_DOC_SKIP_BUMP=1 git commit -m "chore: tweak readme"
+# or bypass all hooks for one commit
+git commit --no-verify -m "chore: tweak readme"
+```
+
+---
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

@@ -1,0 +1,10 @@
+#!/bin/sh
+#
+# Git pre-commit hook: bump the CLI version on every commit.
+# Installed by scripts/install-hooks.sh (via core.hooksPath).
+
+set -eu
+
+root=$(git rev-parse --show-toplevel)
+
+exec sh "$root/scripts/bump-version.sh"

@@ -1,6 +1,6 @@
 [package]
 name = "agentic-doc"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "Keep your project and its documentation in sync — analyse changes, measure coverage, declare relations."
 license = "MIT"

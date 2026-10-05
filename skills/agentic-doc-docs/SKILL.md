@@ -76,9 +76,6 @@ agentic-doc --version
 # 2. Verify the relations sub-command is available
 agentic-doc relations list --json
 # If this fails: stop — "agentic-doc does not support relations yet"
-
-# 3. Verify schema_version == 1
-# Read schema_version from the JSON above. If != 1: stop and report the version
 ```
 
 All three checks must pass before proceeding.

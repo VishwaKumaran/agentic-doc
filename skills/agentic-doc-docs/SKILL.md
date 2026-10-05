@@ -12,8 +12,31 @@ This skill is a **client of the `agentic-doc` CLI**. It reads the index produced
 the tool, reads the source code and existing documentation itself, writes or enriches
 Markdown pages, and registers relations via `relations add`.
 
+It is **language-agnostic**: the tool currently indexes Python (`.py`) and Rust (`.rs`)
+sources, and this skill applies the same procedure to both, and to any language added
+later. Never assume Python unless the tool output says so.
+
 It never fabricates JSON by hand, never edits `.agentic-doc/relations.json` directly,
 and never runs `git`.
+
+---
+
+## Language coverage
+
+The identifiers the tool produces differ per language. **Always derive identifiers from
+the `--json` output, never from the code by hand.** Reference:
+
+| Language | Extensions | Element kinds |
+|---|---|---|
+| Python | `.py` | `file`, `class`, `function`, `method` |
+| Rust | `.rs` | `file`, `struct`, `enum`, `trait`, `impl`, `function`, `method`, `module` |
+
+Files with any other extension are not indexed at all: if a project mixes languages
+(e.g. TypeScript + Rust), only the supported ones appear in coverage, and pages must
+only relate to those. Never invent a relation for an unindexed file.
+
+**Documentation language ≠ source language.** Write pages in the workspace's
+documentation language; keep identifiers and code snippets in their original language.
 
 ---
 
@@ -82,7 +105,7 @@ find . -name "*.md" -not -path "./.agentic-doc/*" -not -path "./node_modules/*" 
 
 # 4. List the top-level directories of the source project
 ls -1 <project_path>
-# Understand the source layout (src/, lib/, …) to anticipate identifier prefixes
+# Understand the source layout (src/, lib/, crates/, …) to anticipate identifier prefixes
 ```
 
 From these four observations, derive **docs_dir**: the directory inside the workspace
@@ -243,9 +266,9 @@ those interactions in prose. Do not assume the reader will infer them from the c
 has known limitations, document them in a dedicated `Errors and edge cases` /
 `Erreurs et cas limites` subsection or as a note within the relevant section.
 
-**Avoid documentation that reads like a docstring.** A page must add value beyond
-what is already visible in the function signature. Focus on intent, context, and
-real-world usage — not on restating the type hints.
+**Avoid documentation that reads like a docstring / rustdoc comment.** A page must add
+value beyond what is already visible in the signature or type hints/annotations. Focus on
+intent, context, and real-world usage — not on restating the types.
 
 ---
 
@@ -301,16 +324,32 @@ Rules:
   alternative identifier. Report it in the summary.
 - Create the Markdown file **before** calling `relations add`: the target must exist.
 
-**Valid identifier forms:**
+**Valid identifier forms** (the symbol part is language-dependent — copy verbatim from
+`--json`):
 
-| Form | Element |
-|---|---|
-| `src/foo.py` | the file itself |
-| `src/foo.py::MyClass` | a class |
-| `src/foo.py::my_func` | a module-level function |
-| `src/foo.py::MyClass.method` | a method |
+| Language | Form | Element |
+|---|---|---|
+| any | `src/foo.rs` / `src/foo.py` | the file itself |
+| Python | `src/foo.py::MyClass` | a class |
+| Python | `src/foo.py::my_func` | a module-level function |
+| Python | `src/foo.py::MyClass.method` | a method |
+| Rust | `src/foo.rs::MyStruct` | a struct |
+| Rust | `src/foo.rs::MyEnum` | an enum |
+| Rust | `src/foo.rs::MyTrait` | a trait |
+| Rust | `src/foo.rs::MyType::impl` | an inherent `impl` block (anonymous) |
+| Rust | `src/foo.rs::MyType::impl::MyTrait` | a trait implementation |
+| Rust | `src/foo.rs::MyType::impl#2` | a second anonymous `impl` block |
+| Rust | `src/foo.rs::my_fn` | a free function |
+| Rust | `src/foo.rs::MyType::my_method` | a method |
+| Rust | `src/foo.rs::my_mod::my_fn` | a symbol inside a module |
+
+In short: the identifier is always `<path>` for a file, and `<path>::<qualified symbol>`
+otherwise, where the qualified symbol joins its enclosing scopes with `::`
+(e.g. `mod::Type::method` in Rust, `Class.method` in Python).
 
 No parentheses in identifiers. Variables and attributes are not elements.
+`Cargo.toml`, `package.json`, `pyproject.toml` and other non-indexed files are never
+valid relation sources.
 
 ### Step 7 — Post-write verification
 
@@ -357,12 +396,12 @@ The summary must be **quantified**, with before/after comparison:
 ### Pages written / enriched
 | Page | Action | Associated elements |
 |---|---|---|
-| authentication.md | created | src/auth.py, src/auth.py::AuthService |
+| authentication.md | created | src/auth.rs, src/auth.rs::AuthService |
 
 ### Relations declared
 | Source | Target | Result |
 |---|---|---|
-| src/auth.py | authentication.md | ok |
+| src/auth.rs | authentication.md | ok |
 
 ### Failures and reports
 (list of refused `add` calls, orphaned relations, undocumentable elements)

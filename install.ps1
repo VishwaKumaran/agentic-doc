@@ -31,7 +31,7 @@ function Fail([string]$Message) {
 # A small step-based UI. Write-Host colours simply drop out when the output is
 # redirected, so a piped install stays plain and greppable.
 
-$script:TotalSteps = 5
+$script:TotalSteps = 6
 $script:Step = 0
 
 function Write-Banner {
@@ -119,6 +119,14 @@ if (-not $cargo) {
     Fail "cargo not found. Install a Rust toolchain (https://rustup.rs) and re-run."
 }
 Write-Note "$(& $cargo.Source --version)"
+
+Write-Step "Checking C compiler"
+$cc = Get-Command cl.exe -ErrorAction SilentlyContinue
+if (-not $cc) { $cc = Get-Command link.exe -ErrorAction SilentlyContinue }
+if (-not $cc) {
+    Fail "no C compiler found. Install Visual Studio Build Tools with the C++ workload (cl.exe/link.exe), then re-run; tree-sitter grammars compile C."
+}
+Write-Note "found $($cc.Source) (required to compile tree-sitter grammars)"
 
 # --- build -------------------------------------------------------------------
 

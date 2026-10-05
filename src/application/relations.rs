@@ -1,7 +1,7 @@
 //! Use cases pour la gestion des relations de documentation.
 
 use crate::analysis::analyzer::{AnalysisError, ProjectAnalyzer};
-use crate::analysis::python::PythonAnalyzer;
+use crate::analysis::multilang::MultiLanguageAnalyzer;
 use crate::documentation::analyzer::DocumentationAnalyzer;
 use crate::documentation::markdown::MarkdownAnalyzer;
 use crate::domain::document::DocumentId;
@@ -139,8 +139,8 @@ fn load_context(
     let project = Project::new(&canonical_project)
         .map_err(|e| RelationsError::AnalysisFailed(e.to_string()))?;
 
-    let py_analyzer = PythonAnalyzer::new();
-    let current_model = py_analyzer.analyze(&project).map_err(|e| match e {
+    let analyzer = MultiLanguageAnalyzer::new();
+    let current_model = analyzer.analyze(&project).map_err(|e| match e {
         AnalysisError::RootNotFound(p) => RelationsError::ProjectNotFound(p),
         other => RelationsError::AnalysisFailed(other.to_string()),
     })?;

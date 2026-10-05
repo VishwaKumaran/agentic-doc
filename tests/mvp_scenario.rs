@@ -103,7 +103,7 @@ fn test_mvp_scenario() {
   "version": 1,
   "relations": [
     {
-      "source": "src/auth.py::AuthService",
+      "source": "src/auth.py",
       "target": "authentication.md",
       "origin": "explicit",
       "status": "validated",
@@ -125,7 +125,7 @@ fn test_mvp_scenario() {
         .assert()
         .success()
         .stdout(predicate::str::contains("authentication.md"))
-        .stdout(predicate::str::contains("AuthService was modified."));
+        .stdout(predicate::str::contains("src/auth.py was modified."));
 
     // 8. scan -> enregistrer le nouvel état
     let mut scan_cmd2 = Command::cargo_bin("agentic-doc").unwrap();

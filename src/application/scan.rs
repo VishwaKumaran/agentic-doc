@@ -1,7 +1,7 @@
 //! Use case ScanProject : analyse du projet et enregistrement d'un snapshot.
 
 use crate::analysis::analyzer::{AnalysisError, ProjectAnalyzer};
-use crate::analysis::python::PythonAnalyzer;
+use crate::analysis::multilang::MultiLanguageAnalyzer;
 use crate::domain::project::Project;
 use crate::domain::snapshot::Snapshot;
 use crate::infrastructure::config::WorkspaceConfig;
@@ -69,7 +69,7 @@ impl ScanProject {
         let project = Project::new(&canonical_project)
             .map_err(|e| ScanError::AnalysisFailed(e.to_string()))?;
 
-        let analyzer = PythonAnalyzer::new();
+        let analyzer = MultiLanguageAnalyzer::new();
         let model = analyzer.analyze(&project).map_err(|e| match e {
             AnalysisError::RootNotFound(p) => ScanError::ProjectNotFound(p),
             other => ScanError::AnalysisFailed(other.to_string()),

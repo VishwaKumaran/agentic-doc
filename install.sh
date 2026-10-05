@@ -111,7 +111,7 @@ if [ "$plain" = 0 ]; then
 	c_red=$esc'[31m'
 fi
 
-step_total=5
+step_total=6
 step_current=0
 
 # Banner shown once, before the first step.
@@ -394,8 +394,14 @@ cd "$checkout"
 
 step_begin "Locating the Rust toolchain"
 cargo_bin=$(command -v cargo) || die "cargo not found. Install a Rust toolchain (https://rustup.rs) and re-run."
-step_note "$("$cargo_bin" --version 2>/dev/null || printf 'cargo')"
+step_ok "$("$cargo_bin" --version)"
 
+step_begin "Checking C compiler"
+if cc_bin=$(command -v cc 2>/dev/null) || cc_bin=$(command -v gcc 2>/dev/null) || cc_bin=$(command -v clang 2>/dev/null); then
+	step_ok "found $cc_bin (required to compile tree-sitter grammars)"
+else
+	die "no C compiler found. Install cc, gcc, or clang, then re-run (tree-sitter grammars compile C)."
+fi
 # --- build -------------------------------------------------------------------
 
 step_begin "Building $PROG (release)"

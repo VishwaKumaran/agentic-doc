@@ -1,7 +1,7 @@
 # agentic-doc
 
 `agentic-doc` is a command-line tool that keeps a software project and its documentation
-in sync. It analyses Python source code, tracks changes between snapshots, and reports
+in sync. It analyses Python and Rust source code, tracks changes between snapshots, and reports
 which documentation pages are potentially outdated.
 
 > **PyPI name notice:** the name `agentic-doc` on PyPI is already taken by
@@ -83,6 +83,10 @@ sh tests/install_smoke.sh
 ```bash
 cargo install --git https://github.com/VishwaKumaran/agentic-doc
 ```
+
+Building requires a C compiler because the pinned tree-sitter Python and Rust grammars
+compile C: install `cc`, `gcc`, or `clang` on Unix; install Visual Studio Build Tools
+with the C++ workload on Windows.
 
 This puts `agentic-doc` in `~/.cargo/bin` and leaves your shell profile alone.
 

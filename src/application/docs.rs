@@ -1,7 +1,7 @@
 //! Use case AnalyzeDocumentationImpact : analyse des impacts des changements sur la documentation.
 
 use crate::analysis::analyzer::{AnalysisError, ProjectAnalyzer};
-use crate::analysis::python::PythonAnalyzer;
+use crate::analysis::multilang::MultiLanguageAnalyzer;
 use crate::documentation::analyzer::DocumentationAnalyzer;
 use crate::documentation::markdown::MarkdownAnalyzer;
 use crate::domain::change::{ChangeDetector, ChangeSet};
@@ -94,8 +94,8 @@ impl AnalyzeDocumentationImpact {
         let project = Project::new(&canonical_project)
             .map_err(|e| DocsError::AnalysisFailed(e.to_string()))?;
 
-        let py_analyzer = PythonAnalyzer::new();
-        let current_model = py_analyzer.analyze(&project).map_err(|e| match e {
+        let analyzer = MultiLanguageAnalyzer::new();
+        let current_model = analyzer.analyze(&project).map_err(|e| match e {
             AnalysisError::RootNotFound(p) => DocsError::ProjectNotFound(p),
             other => DocsError::AnalysisFailed(other.to_string()),
         })?;

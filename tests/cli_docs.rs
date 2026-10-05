@@ -87,7 +87,7 @@ fn test_cli_docs_m2_scenario() {
     let stdout = String::from_utf8(assert_out.get_output().stdout.clone()).unwrap();
     let json_val: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(json_val["command"], "docs");
-    assert_eq!(json_val["schema_version"], 1);
+    assert_eq!(json_val["schema_version"], 2);
     assert_eq!(json_val["impacts"][0]["document"], "authentication.md");
 }
 
@@ -421,7 +421,7 @@ fn test_cli_docs_warnings_for_orphan_relation_source_and_target_json() {
     let val: serde_json::Value = serde_json::from_str(&stdout).unwrap();
 
     assert_eq!(val["command"], "docs");
-    assert_eq!(val["schema_version"], 1);
+    assert_eq!(val["schema_version"], 2);
 
     let warnings = val["warnings"].as_array().expect("warnings array in json");
     let warnings_str: Vec<&str> = warnings.iter().map(|w| w.as_str().unwrap()).collect();

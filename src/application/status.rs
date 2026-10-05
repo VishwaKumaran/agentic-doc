@@ -1,7 +1,7 @@
 //! Use case GetProjectStatus : calcul des changements entre le dernier snapshot et l'état courant.
 
 use crate::analysis::analyzer::{AnalysisError, ProjectAnalyzer};
-use crate::analysis::python::PythonAnalyzer;
+use crate::analysis::multilang::MultiLanguageAnalyzer;
 use crate::domain::change::{ChangeDetector, ChangeSet};
 use crate::domain::project::Project;
 use crate::domain::snapshot::Snapshot;
@@ -74,7 +74,7 @@ impl GetProjectStatus {
         // L'absence de snapshot n'est plus une erreur : c'est le premier run.
         let previous_snapshot: Option<Snapshot> = repo.get_latest(&project)?;
 
-        let analyzer = PythonAnalyzer::new();
+        let analyzer = MultiLanguageAnalyzer::new();
         let current_model = analyzer.analyze(&project).map_err(|e| match e {
             AnalysisError::RootNotFound(p) => StatusError::ProjectNotFound(p),
             other => StatusError::AnalysisFailed(other.to_string()),

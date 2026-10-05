@@ -146,7 +146,11 @@ pub enum SkillsCommands {
     #[command(alias = "add")]
     Install {
         /// Arguments transmis tels quels à `npx skills add`
-        #[arg(value_name = "ARGS", trailing_var_arg = true, allow_hyphen_values = true)]
+        #[arg(
+            value_name = "ARGS",
+            trailing_var_arg = true,
+            allow_hyphen_values = true
+        )]
         args: Vec<String>,
     },
 }

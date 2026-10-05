@@ -17,7 +17,7 @@ use serde_json::json;
 pub fn emit_empty_analysis_warning() {
     eprintln!("Warning: 0 source file analyzed.");
     eprintln!(
-        "Hint: the project may use a language that is not supported yet (only Python is analyzed)."
+        "Hint: the project may use a language that is not supported yet (only Python and Rust are analyzed)."
     );
 }
 
@@ -25,7 +25,7 @@ pub fn emit_empty_analysis_warning() {
 ///
 /// Incrémentée **uniquement** en cas de rupture (renommage, suppression ou changement
 /// de type d'un champ existant). Un ajout de champ ne change pas la version.
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 pub fn format_setup_text(result: &SetupResult) -> String {
     let status_msg = if result.overwritten {
@@ -264,6 +264,11 @@ pub fn format_status_json(result: &StatusResult) -> String {
                 SourceElementKind::Class => "class",
                 SourceElementKind::Function => "function",
                 SourceElementKind::Method => "method",
+                SourceElementKind::Struct => "struct",
+                SourceElementKind::Enum => "enum",
+                SourceElementKind::Trait => "trait",
+                SourceElementKind::Impl => "impl",
+                SourceElementKind::Module => "module",
             };
             json_changes.push(json!({
                 "type": t,
@@ -474,6 +479,11 @@ pub fn format_coverage_json(coverage: &crate::domain::coverage::Coverage, all: b
                     SourceElementKind::Class => "class",
                     SourceElementKind::Function => "function",
                     SourceElementKind::Method => "method",
+                    SourceElementKind::Struct => "struct",
+                    SourceElementKind::Enum => "enum",
+                    SourceElementKind::Trait => "trait",
+                    SourceElementKind::Impl => "impl",
+                    SourceElementKind::Module => "module",
                 };
                 json!({
                     "file": e.file,

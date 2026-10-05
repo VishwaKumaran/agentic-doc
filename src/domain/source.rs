@@ -12,6 +12,11 @@ pub enum SourceElementKind {
     Class,
     Function,
     Method,
+    Struct,
+    Enum,
+    Trait,
+    Impl,
+    Module,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]

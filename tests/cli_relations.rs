@@ -145,7 +145,7 @@ fn test_cli_relations_add_and_list_success_and_json() {
     let stdout = String::from_utf8(assert_out.get_output().stdout.clone()).unwrap();
     let json_val: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(json_val["command"], "relations");
-    assert_eq!(json_val["schema_version"], 1);
+    assert_eq!(json_val["schema_version"], 2);
     assert_eq!(json_val["count"], 1);
     assert_eq!(json_val["relations"][0]["resolution"], "ok");
 }

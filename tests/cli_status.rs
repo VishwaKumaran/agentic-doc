@@ -73,7 +73,7 @@ fn test_cli_status_no_snapshot_premier_run_json_previous_snapshot_null() {
     let stdout = String::from_utf8(assert_out.get_output().stdout.clone()).unwrap();
     let json_val: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(json_val["command"], "status");
-    assert_eq!(json_val["schema_version"], 1);
+    assert_eq!(json_val["schema_version"], 2);
     assert_eq!(json_val["previous_snapshot"], serde_json::Value::Null);
     assert_eq!(json_val["current_snapshot"], serde_json::Value::Null);
     // Tous les changements sont du type file_added ou element_added

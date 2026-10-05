@@ -70,6 +70,6 @@ fn test_cli_setup_json() {
     let stdout = String::from_utf8(assert_out.get_output().stdout.clone()).unwrap();
     let json_val: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(json_val["command"], "setup");
-    assert_eq!(json_val["schema_version"], 1);
+    assert_eq!(json_val["schema_version"], 2);
     assert_eq!(json_val["overwritten"], false);
 }

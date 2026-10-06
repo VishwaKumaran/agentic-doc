@@ -12,6 +12,9 @@ This skill is a **client of the `agentic-doc` CLI**. It reads the index produced
 the tool, reads the source code and existing documentation itself, writes or enriches
 Markdown pages, and registers relations via `relations add`.
 
+Page templates and their quality checklists live in [templates.md](templates.md). This
+skill remains the procedure; select and apply the approved template there.
+
 It is **language-agnostic**: the tool currently indexes Python (`.py`) and Rust (`.rs`)
 sources, and this skill applies the same procedure to both, and to any language added
 later. Never assume Python unless the tool output says so.
@@ -57,7 +60,9 @@ documentation language; keep identifiers and code snippets in their original lan
 | `diff` | default | processes what changed since the last snapshot |
 | `backlog` | explicit | catches up undocumented elements |
 
-**Default budget:** 3 pages / 10 elements per run.
+**Default budget:** 3 pages per run, across all page types. The 10-element cap applies
+only to element-driven `reference`, `concept`, and `tutorial` pages; `overview` pages
+do not consume that cap.
 
 ---
 
@@ -181,10 +186,21 @@ Work list = impacted pages + modified elements not yet covered, within the budge
 **`backlog` mode:**
 
 Work list = elements from `undocumented` (Step 2), capped at the budget
-(10 elements / 3 pages). **The agent decides how to group elements into pages.**
+(10 elements for element-driven pages / 3 pages total). **The agent decides how to group
+elements into pages.**
 Several related elements may share a single page when they cover the same topic;
 the agent also decides the page's table of contents. Elements are sourced in
 alphabetical order by file.
+
+For every proposed page, propose exactly one type:
+
+- `reference` for a symbol-driven page;
+- `overview` for a subsystem entry point;
+- `concept` for a cross-cutting concern or design intention; or
+- `tutorial` for a sequential procedure.
+
+The user may override the proposal. Every page has a type, and the approved type selects
+its template in `templates.md`.
 
 **Orphaned documents (`unreferenced_documents`):**
 - If an obvious match with a known source element exists: declare the relation.
@@ -197,11 +213,13 @@ alphabetical order by file.
 
 Display:
 1. Mode and budget.
-2. List of pages to create or enrich, with associated elements.
-3. Relations to declare.
+2. List of pages to create or enrich, with their **type**, associated elements, and
+   relations to declare.
+3. Relations to declare, or `intentionally-unreferenced` for an `overview`.
 4. Items flagged as orphaned or undocumentable.
 
 **Wait explicitly for the user's approval before writing anything.**
+The user may change a page type; use the retained type in the template and run summary.
 There is no `--yes` flag in this version.
 
 ### Step 6 — Write (for each retained unit)
@@ -215,13 +233,15 @@ mention or promise them.
 
 Writing rules:
 - **H1 required** (first line `# Title`): this is the only title the tool can read.
-- **Mandatory minimum sections**: `Role`, `Usage`, `Key Elements`, `Examples`
-  (or `Rôle`, `Utilisation`, `Éléments principaux`, `Exemples` in French).
-  These sections may be extended.
+- **Template**: select the approved page type in `templates.md`. Its required English/French
+  sections are the mandatory minimum; `reference` keeps `Role`, `Usage`, `Key Elements`,
+  and `Examples` unchanged.
 - **Language**: that of the existing documents in the workspace; otherwise, the
   workspace language. Use `> ⚠️ Unverified` in English corpora,
   `> ⚠️ À vérifier` in French corpora, for anything not verified in the source.
-- **Rewrite**: allowed only if existing content has become factually wrong.
+- **Append-only enrichment**: never remove, rename, or reorder an existing section. A full
+  restructuring may be proposed only in Step 5 and requires explicit approval in this run;
+  rewrite is otherwise allowed only where existing content has become factually wrong.
 - **Prohibited**: inventing a parameter, example, or use case; copying code beyond
   a short signature; removing human-authored content.
 
@@ -234,6 +254,9 @@ covers the topic.
 
 Every page written or enriched MUST meet these standards. A page that contains only
 code snippets and a parameter list is **not acceptable**.
+
+Before declaring a page written, its type checklist in `templates.md` and the common
+completion checklist there MUST both pass.
 
 **Write for all audiences.** Assume the reader is not the author of the code. Before
 any code block, explain in plain prose:
@@ -301,7 +324,7 @@ description: "Short description"
 #### 6c. Declare relations (same run as the write)
 
 ```bash
-# File-level relation (required for every page written)
+# File-level relation (required for each source file documented by an element-driven page)
 agentic-doc relations add "<file-identifier>" "<page.md>"
 
 # Direct relation (only for symbols that have their own section in the page)
@@ -314,7 +337,12 @@ Rules:
   invisible in the next run.
 - **Identifiers are copied character-for-character** from `--json` output.
   Never infer an identifier from a symbol name in the code.
-- **File-level relation is mandatory** for each page created or enriched.
+- **File-level relation is mandatory** for every source file actually documented by a
+  `reference`, `concept`, or `tutorial` page. Declare no fabricated relation merely to meet
+  this rule.
+- `overview` pages, and phase-2 `index` pages when introduced, are intentionally
+  unreferenced: do not declare relations for them and report them as
+  `intentionally-unreferenced` in the run summary.
 - **Direct relation** only for symbols that have a dedicated section in the page
   (no "decorative" relation that would artificially inflate confidence).
 - If `add` fails (exit code 1): record the failure, continue, never invent an
@@ -395,6 +423,11 @@ The summary must be **quantified**, with before/after comparison:
 |---|---|---|
 | authentication.md | created | src/auth.rs, src/auth.rs::AuthService |
 
+### Page quality
+| Page | Type | Checklist | Links added |
+|---|---|---|---|
+| authentication.md | reference | pass | none |
+
 ### Relations declared
 | Source | Target | Result |
 |---|---|---|
@@ -429,6 +462,10 @@ On individual failure: continue and report. Never stop at the first refusal.
 - **Never** run `scan` at the start of an execution.
 - **No absolute paths, no `~`**: invoke `agentic-doc` from the `PATH`.
 - **Preflight is mandatory** before any write.
+- Every created page has a type declared in the Step 5 plan.
+- `templates.md` is authoritative for the required sections and checklists.
+- Enrichment is append-only unless this run has explicit approval to restructure.
+- Never link to a page that does not exist in `docs_dir`.
 
 ---
 
@@ -454,6 +491,11 @@ On individual failure: continue and report. Never stop at the first refusal.
   no `candidate` status. Out of scope.
 - `README.md` at the root and navigation pages are normally in `unreferenced_documents`.
   Do not "fix" them.
+- **Defaulting every page to `reference` erases the taxonomy**: make an explicit type
+  decision for every page.
+- **Front matter is not a default**: introduce it only when the corpus already uses it.
+- **Do not restructure by accident**: obtain explicit approval in this run before doing so.
+- Do not mention `agentic-doc structure`: that command does not exist.
 
 ---
 
